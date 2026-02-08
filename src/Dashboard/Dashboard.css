@@ -568,6 +568,144 @@
     color: #6b7280;
 }
 
+/* Module Management & User Management */
+.management-content {
+    background-color: #ffffff;
+    border-radius: 4px;
+    border: 1px solid #e5e7eb;
+    padding: 1.25rem 1.5rem;
+}
+
+.management-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.25rem;
+    border-bottom: 1px solid #e5e7eb;
+    padding-bottom: 0.5rem;
+}
+
+.management-tab {
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #6b7280;
+    background: none;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: color 0.15s, background-color 0.15s;
+}
+
+.management-tab:hover {
+    color: #111827;
+    background-color: #f3f4f6;
+}
+
+.management-tab.active {
+    color: #2563eb;
+    background-color: #eff6ff;
+}
+
+.management-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 1rem;
+}
+
+.management-table-wrap {
+    overflow-x: auto;
+}
+
+.management-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.management-table th,
+.management-table td {
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.management-table th {
+    font-weight: 600;
+    color: #374151;
+    background-color: #f9fafb;
+}
+
+.management-table tbody tr:hover {
+    background-color: #f9fafb;
+}
+
+.management-th-actions,
+.management-td-actions {
+    text-align: right;
+    white-space: nowrap;
+}
+
+.management-btn {
+    padding: 0.35rem 0.65rem;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-left: 0.35rem;
+    transition: background-color 0.15s, color 0.15s;
+}
+
+.management-btn-view {
+    background-color: #e0f2fe;
+    color: #0369a1;
+}
+
+.management-btn-view:hover {
+    background-color: #bae6fd;
+}
+
+.management-btn-edit {
+    background-color: #fef3c7;
+    color: #b45309;
+}
+
+.management-btn-edit:hover {
+    background-color: #fde68a;
+}
+
+.management-btn-delete {
+    background-color: #fee2e2;
+    color: #b91c1c;
+}
+
+.management-btn-delete:hover {
+    background-color: #fecaca;
+}
+
+.management-badge {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    background-color: #e5e7eb;
+    color: #4b5563;
+}
+
+.management-badge-role {
+    background-color: #dbeafe;
+    color: #1d4ed8;
+}
+
+.management-empty {
+    padding: 1.5rem;
+    text-align: center;
+    color: #6b7280;
+    font-size: 0.9rem;
+    margin: 0;
+}
+
 @media (max-width: 768px) {
     .dashboard-body {
         flex-direction: column;

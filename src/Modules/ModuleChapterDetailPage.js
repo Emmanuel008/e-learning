@@ -79,49 +79,43 @@ const ModuleChapterDetailPage = () => {
               <p className="module-detail-empty">
                 Details for this chapter will appear here.
               </p>
-            ) : isVideo ? (
-              <div className="module-video-grid">
-                {listItems.map((video) => (
-                  <div key={video.id} className="module-video-card">
-                    <div className="module-video-thumb">
-                      <div className="module-video-play-icon">▶</div>
-                    </div>
-                    <div className="module-video-meta">
-                      <div className="module-video-title">{video.title}</div>
-                      {video.duration && (
-                        <div className="module-video-duration">
-                          {video.duration} min
-                        </div>
-                      )}
-                    </div>
-                    <div className="module-video-progress">
-                      <div className="module-video-progress-bar">
-                        <div
-                          className="module-video-progress-fill"
-                          style={{ width: `${video.progress || 0}%` }}
-                        />
-                      </div>
-                      <div className="module-video-progress-text">
-                        {video.progress || 0}% Complete
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
             ) : (
-              <div className="module-detail-list">
-                {listItems.map((item) => (
-                  <div key={item.id} className="module-detail-card">
-                    <div className="module-detail-card-title">
-                      {item.title}
+              <div className="module-chapter-items-grid">
+                {listItems.map((item, index) => {
+                  const progress = item.progress ?? 0;
+                  const typeLabel = isVideo ? 'Video' : 'Book';
+                  const subLabel = isVideo ? `${item.duration || '—'} min` : null;
+                  return (
+                    <div
+                      key={item.id}
+                      className={`module-chapter-item-card ${isVideo ? 'module-chapter-item-card-video' : ''}`}
+                    >
+                      <div className="module-chapter-item-image">
+                        {isVideo && <div className="module-chapter-item-play">▶</div>}
+                      </div>
+                      <div className="module-chapter-item-body">
+                        <div className="module-chapter-item-label">
+                          {typeLabel} {index + 1} · {isVideo ? 'Video' : 'Book'}
+                        </div>
+                        <div className="module-chapter-item-title">{item.title}</div>
+                        {subLabel && (
+                          <div className="module-chapter-item-meta">{subLabel}</div>
+                        )}
+                        <div className="module-chapter-item-progress">
+                          <div className="module-chapter-item-progress-bar">
+                            <div
+                              className="module-chapter-item-progress-fill"
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                          <span className="module-chapter-item-progress-text">
+                            {progress}% Complete
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    {item.description && (
-                      <p className="module-detail-card-description">
-                        {item.description}
-                      </p>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

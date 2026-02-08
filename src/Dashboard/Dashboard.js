@@ -3,6 +3,8 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardShell from './DashboardShell';
 import SectionHeader from '../components/SectionHeader';
 import StatusTabs from '../components/StatusTabs';
+import ModuleManagement from './ModuleManagement';
+import UserManagement from './UserManagement';
 
 const MENU_LABELS = {
   home: 'Home',
@@ -16,8 +18,6 @@ const MENU_LABELS = {
 const SECTION_ITEMS = {
   home: [{ id: 'h-1', title: 'Welcome checklist' }, { id: 'h-2', title: 'Last month summary' }],
   certification: [{ id: 'c-1', title: 'Pending certifications' }, { id: 'c-2', title: 'Issued certifications' }],
-  usermanagement: [{ id: 'u-1', title: 'New user requests' }, { id: 'u-2', title: 'All users' }],
-  modulemanagement: [{ id: 'mm-1', title: 'Modules needing review' }, { id: 'mm-2', title: 'Published modules' }],
   helpcentre: [{ id: 'hc-1', title: 'Open tickets' }, { id: 'hc-2', title: 'Knowledge base' }]
 };
 
@@ -103,6 +103,14 @@ const Dashboard = () => {
           </div>
         </div>
       );
+    }
+
+    if (activeMenu === 'modulemanagement') {
+      return <ModuleManagement />;
+    }
+
+    if (activeMenu === 'usermanagement') {
+      return <UserManagement />;
     }
 
     const items = SECTION_ITEMS[activeMenu] || SECTION_ITEMS.home;
