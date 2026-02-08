@@ -1,10 +1,11 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardShell from './DashboardShell';
 import SectionHeader from '../components/SectionHeader';
 import StatusTabs from '../components/StatusTabs';
 import ModuleManagement from './ModuleManagement';
 import UserManagement from './UserManagement';
+import { getUserData, getModulesForUser } from './dashboardService';
 
 const MENU_LABELS = {
   home: 'Home',
@@ -16,17 +17,23 @@ const MENU_LABELS = {
 };
 
 const SECTION_ITEMS = {
-  home: [{ id: 'h-1', title: 'Welcome checklist' }, { id: 'h-2', title: 'Last month summary' }],
   certification: [{ id: 'c-1', title: 'Pending certifications' }, { id: 'c-2', title: 'Issued certifications' }],
   helpcentre: [{ id: 'hc-1', title: 'Open tickets' }, { id: 'hc-2', title: 'Knowledge base' }]
 };
 
+const DEFAULT_SECTION_ITEMS = [{ id: 'overview', title: 'Overview' }];
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [userData, setUserData] = useState(null);
 
   const activeMenu = searchParams.get('menu') || 'home';
   const activeTab = searchParams.get('tab') || 'all';
+
+  useEffect(() => {
+    setUserData(getUserData());
+  }, []);
 
   const setTab = (nextTab) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -36,13 +43,8 @@ const Dashboard = () => {
   };
 
   const modules = useMemo(
-    () => [
-      { code: 'HMU08001', name: 'Innovation Management', status: 'Start', progress: 0, route: '/modules/hmu08001' },
-      { code: 'HMU08002', name: 'Intellectual Property (IP) Management', status: 'Start', progress: 0, route: '/modules/hmu08002' },
-      { code: 'HMU08003', name: 'Research Commercialization', status: 'Finished', progress: 100, route: '/modules/hmu08003' },
-      { code: 'HMU08004', name: 'Fundraising and Sustainable Hub Operations', status: 'Finished', progress: 100, route: '/modules/hmu08004' }
-    ],
-    []
+    () => getModulesForUser(userData?.id) ?? [],
+    [userData?.id]
   );
 
   const filteredModules = useMemo(() => {
@@ -113,7 +115,69 @@ const Dashboard = () => {
       return <UserManagement />;
     }
 
-    const items = SECTION_ITEMS[activeMenu] || SECTION_ITEMS.home;
+    if (activeMenu === 'home' && userData) {
+      const total = modules.length;
+      const completed = modules.filter((m) => m.progress >= 100).length;
+      const inProgress = modules.filter((m) => m.progress > 0 && m.progress < 100).length;
+      const notStarted = total - completed - inProgress;
+
+      return (
+        <div className="dashboard-content">
+          <div className="home-stats">
+            <div className="home-stat-card">
+              <span className="home-stat-value">{total}</span>
+              <span className="home-stat-label">Total modules</span>
+            </div>
+            <div className="home-stat-card">
+              <span className="home-stat-value">{completed}</span>
+              <span className="home-stat-label">Completed</span>
+            </div>
+            <div className="home-stat-card">
+              <span className="home-stat-value">{inProgress}</span>
+              <span className="home-stat-label">In progress</span>
+            </div>
+            <div className="home-stat-card">
+              <span className="home-stat-value">{notStarted}</span>
+              <span className="home-stat-label">Not started</span>
+            </div>
+          </div>
+          <div className="home-modules-section">
+            <h3 className="home-modules-title">Your modules</h3>
+            <div className="management-table-wrap">
+              <table className="management-table home-modules-table">
+                <thead>
+                  <tr>
+                    <th>Module code</th>
+                    <th>Module name</th>
+                    <th>Status</th>
+                    <th>Progress</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {modules.map((m) => (
+                    <tr key={m.code}>
+                      <td>{m.code}</td>
+                      <td>{m.name}</td>
+                      <td>
+                        <span className={`mymodule-status-badge ${(m.status || '').toLowerCase()}`}>
+                          {m.status || '—'}
+                        </span>
+                      </td>
+                      <td>{m.progress ?? 0}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {modules.length === 0 && (
+              <p className="management-empty">No modules selected yet. Go to MyModule to see available modules.</p>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    const items = SECTION_ITEMS[activeMenu] || DEFAULT_SECTION_ITEMS;
 
     return (
       <div className="dashboard-content">

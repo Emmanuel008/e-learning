@@ -1,4 +1,3 @@
-
 export const registerUser = async (userData) => {
     // Simulate API call
     return new Promise((resolve) => {

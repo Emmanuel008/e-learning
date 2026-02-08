@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
@@ -30,8 +29,7 @@ const RegisterPage = () => {
 
         try {
             const response = await registerUser(formData);
-            console.log('Registration successful:', response);
-            
+
             if (response.success) {
                 await Swal.fire({
                     icon: 'success',
@@ -63,7 +61,6 @@ const RegisterPage = () => {
                 });
             }
         } catch (error) {
-            console.error('Registration failed:', error);
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',

@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
@@ -29,8 +28,7 @@ const Login = () => {
 
         try {
             const response = await loginUser(formData);
-            console.log('Login response:', response);
-            
+
             if (response.success) {
                 // Store user data
                 if (response.data) {
@@ -67,7 +65,6 @@ const Login = () => {
                 });
             }
         } catch (error) {
-            console.error('Login error:', error);
             await Swal.fire({
                 icon: 'error',
                 title: 'Error',

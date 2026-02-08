@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
+import Swal from 'sweetalert2';
 import Modal from '../components/Modal';
 import './Dashboard.css';
+
+const swalConfirm = (options) => Swal.fire({ confirmButtonColor: '#2563eb', ...options });
+const swalSuccess = (title, text) => swalConfirm({ icon: 'success', title, text });
 
 const ROLES = ['Admin', 'Instructor', 'Learner'];
 
@@ -45,13 +49,22 @@ const UserManagement = () => {
     setSelectedUser(null);
   };
 
-  const handleDelete = (user) => {
-    if (window.confirm(`Delete user "${user.name}"?`)) {
+  const handleDelete = async (user) => {
+    const result = await swalConfirm({
+      title: 'Delete user?',
+      text: `Are you sure you want to delete "${user.name}"?`,
+      icon: 'warning',
+      showCancelButton: true,
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Yes, delete'
+    });
+    if (result.isConfirmed) {
       setUsers(users.filter((u) => u.id !== user.id));
+      await swalSuccess('Deleted!', 'The user has been deleted.');
     }
   };
 
-  const handleSaveUser = (e) => {
+  const handleSaveUser = async (e) => {
     e.preventDefault();
     if (modalMode === 'add') {
       setUsers((prev) => [...prev, { id: generateId(), ...formUser }]);
@@ -61,6 +74,7 @@ const UserManagement = () => {
       );
     }
     closeModal();
+    await swalSuccess(modalMode === 'add' ? 'User added!' : 'User updated!', modalMode === 'add' ? 'The user has been added.' : 'The user has been updated.');
   };
 
   return (
@@ -104,18 +118,13 @@ const UserManagement = () => {
 
       {modalOpen && modalMode === 'view' && selectedUser && (
         <Modal title="View User" show onClose={closeModal}>
-          <div className="modal-view-field">
-            <label>Name</label>
-            <div className="value">{selectedUser.name}</div>
-          </div>
-          <div className="modal-view-field">
-            <label>Email</label>
-            <div className="value">{selectedUser.email}</div>
-          </div>
-          <div className="modal-view-field">
-            <label>Role</label>
-            <div className="value">{selectedUser.role}</div>
-          </div>
+          <table className="modal-view-table">
+            <tbody>
+              <tr><th>Name</th><td>{selectedUser.name}</td></tr>
+              <tr><th>Email</th><td>{selectedUser.email}</td></tr>
+              <tr><th>Role</th><td>{selectedUser.role}</td></tr>
+            </tbody>
+          </table>
         </Modal>
       )}
 
