@@ -7,7 +7,7 @@ import ModuleManagement from './ModuleManagement';
 import UserManagement from './UserManagement';
 import Pagination from '../components/Pagination';
 import { getUserData } from './dashboardService';
-import { moduleApi } from '../api/api';
+import { moduleApi, certificateApi } from '../api/api';
 
 const MODULE_LIST_PER_PAGE = 6;
 
@@ -55,6 +55,9 @@ const Dashboard = () => {
   const [apiModuleError, setApiModuleError] = useState(null);
   const [apiModulePage, setApiModulePage] = useState(1);
   const [apiModuleMeta, setApiModuleMeta] = useState({ current_page: 1, last_page: 1, total: 0, per_page: MODULE_LIST_PER_PAGE });
+  const [myCertificates, setMyCertificates] = useState([]);
+  const [myCertificatesLoading, setMyCertificatesLoading] = useState(false);
+  const [myCertificatesError, setMyCertificatesError] = useState(null);
 
   const activeMenu = searchParams.get('menu') || 'home';
   const activeTab = searchParams.get('tab') || 'all';
@@ -83,10 +86,38 @@ const Dashboard = () => {
     }
   }, []);
 
+  const fetchMyCertificates = useCallback(async () => {
+    const user = getUserData();
+    if (!user?.id) {
+      setMyCertificates([]);
+      return;
+    }
+    setMyCertificatesLoading(true);
+    setMyCertificatesError(null);
+    try {
+      const { data } = await certificateApi.ilist({ user_id: user.id, per_page: 50, page: 1 });
+      if (data?.status === 'OK') {
+        const returnData = data?.returnData;
+        const listOfItem = returnData?.list_of_item ?? returnData;
+        const list = Array.isArray(listOfItem) ? listOfItem : listOfItem?.data ?? returnData?.data ?? [];
+        setMyCertificates(list);
+      } else {
+        setMyCertificates([]);
+        setMyCertificatesError(data?.errorMessage || 'Failed to load certificates.');
+      }
+    } catch (err) {
+      setMyCertificates([]);
+      setMyCertificatesError(err.response?.data?.errorMessage || err.message || 'Failed to load certificates.');
+    } finally {
+      setMyCertificatesLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (activeMenu === 'mymodule') fetchApiModules(apiModulePage);
     if (activeMenu === 'home') fetchApiModules(1);
-  }, [activeMenu, apiModulePage, fetchApiModules]);
+    if (activeMenu === 'certification' && userData?.id) fetchMyCertificates();
+  }, [activeMenu, apiModulePage, fetchApiModules, userData?.id, fetchMyCertificates]);
 
   const setTab = (nextTab) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -146,6 +177,61 @@ const Dashboard = () => {
                   <p style={{ color: '#6b7280', marginTop: '0.75rem' }}>No modules found for this filter.</p>
                 )}
                 <Pagination currentPage={currentPage} lastPage={lastPage} onPageChange={setApiModulePage} total={total} from={from} to={to} />
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    if (activeMenu === 'certification' && userData) {
+      const myCertsOnly = myCertificates.filter((c) => Number(c.user_id) === Number(userData.id));
+      return (
+        <div className="dashboard-content">
+          <div className="management-table-wrap">
+            <h3 className="home-modules-title">My certificates</h3>
+            {myCertificatesError && <p className="management-error">{myCertificatesError}</p>}
+            {myCertificatesLoading ? (
+              <p className="management-empty">Loading certificates…</p>
+            ) : (
+              <>
+                <table className="management-table">
+                  <thead>
+                    <tr>
+                      <th>Certificate</th>
+                      <th className="management-th-actions">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {myCertsOnly.map((cert) => (
+                      <tr key={cert.id}>
+                        <td>
+                          {cert.title || cert.name || `Certificate #${cert.id}`}
+                          {cert.created_at && (
+                            <span className="certificate-date"> — {cert.created_at}</span>
+                          )}
+                        </td>
+                        <td className="management-td-actions">
+                          {cert.path ? (
+                            <>
+                              <a href={cert.path} target="_blank" rel="noopener noreferrer" className="management-btn management-btn-view">
+                                View
+                              </a>
+                              <a href={cert.path} download className="management-btn management-btn-edit">
+                                Download
+                              </a>
+                            </>
+                          ) : (
+                            <span className="management-empty">No file</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {myCertsOnly.length === 0 && !myCertificatesLoading && (
+                  <p className="management-empty">You have no certificates yet.</p>
+                )}
               </>
             )}
           </div>
