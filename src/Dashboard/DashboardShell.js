@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { getUserData, clearUserData } from './dashboardService';
+import { auth } from '../api/api';
 import './Dashboard.css';
 
 const menuItems = [
@@ -71,7 +72,12 @@ const DashboardShell = ({ activeMenuId = 'home', children }) => {
     setUserData(data);
   }, [navigate]);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await auth.logout();
+    } catch (_) {
+      // Proceed to clear local state even if API call fails (e.g. token expired)
+    }
     clearUserData();
     navigate('/login');
   };

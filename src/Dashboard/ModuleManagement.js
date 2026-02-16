@@ -1,58 +1,107 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Swal from 'sweetalert2';
 import Modal from '../components/Modal';
+import Pagination from '../components/Pagination';
+import { moduleApi, learningMaterialApi, quizApi, certificateApi, users as usersApi } from '../api/api';
 import './Dashboard.css';
 
 const swalConfirm = (options) => Swal.fire({ confirmButtonColor: '#2563eb', ...options });
 const swalSuccess = (title, text) => swalConfirm({ icon: 'success', title, text });
+const swalError = (title, text) => swalConfirm({ icon: 'error', title, text });
 
-const MODULE_OPTIONS = [
-  { value: 'HMU08001', label: 'HMU08001 - Innovation Management' },
-  { value: 'HMU08002', label: 'HMU08002 - IP Management' },
-  { value: 'HMU08003', label: 'HMU08003 - Research Commercialization' },
-  { value: 'HMU08004', label: 'HMU08004 - Fundraising' }
-];
+const MODULE_PER_PAGE = 5;
 
 const MODULE_MANAGEMENT_TABS = [
-  { id: 'books', label: 'Books' },
-  { id: 'videos', label: 'Videos' },
-  { id: 'quiz', label: 'Quiz' }
+  { id: 'module', label: 'Module' },
+  { id: 'learning-material', label: 'Learning Material' },
+  { id: 'quiz', label: 'Quiz' },
+  { id: 'certificate', label: 'Certificate' }
 ];
 
-const MOCK_BOOKS = [
-  { id: 'b1', title: 'Foundations of Innovation Management', description: 'Key concepts for innovation in hubs.', module: 'HMU08001', docName: 'foundations.pdf' },
-  { id: 'b2', title: 'Basics of Intellectual Property', description: 'Introduction to IP types and protection.', module: 'HMU08002', docName: '' },
-  { id: 'b3', title: 'From Research to Market', description: 'Turning research into products.', module: 'HMU08003', docName: 'research-market.pdf' }
+const MATERIAL_TYPES = [
+  { value: 'document', label: 'Document' },
+  { value: 'media', label: 'Media' }
 ];
 
-const MOCK_VIDEOS = [
-  { id: 'v1', title: 'Stage-gate model overview', description: 'Overview of the stage-gate process.', module: 'HMU08001', duration: '02:42', videoName: 'stage-gate-overview.mp4' },
-  { id: 'v2', title: 'From idea to patent filing', description: 'Steps from idea to patent.', module: 'HMU08002', duration: '02:42', videoName: '' },
-  { id: 'v3', title: 'Licensing to existing companies', description: 'How to license IP to companies.', module: 'HMU08003', duration: '03:24', videoName: 'licensing.mp4' }
-];
+const MATERIAL_PER_PAGE = 5;
+const QUIZ_PER_PAGE = 5;
+const CERTIFICATE_PER_PAGE = 5;
 
-const MOCK_QUIZZES = [
-  { id: 'q1', module: 'HMU08001', question: 'Which statement best describes an innovation hub?', options: ['A place to file patents only', 'A space that connects people, ideas and resources', 'A traditional lecture room'], correctAnswerIndex: 1 },
-  { id: 'q2', module: 'HMU08002', question: 'Which of the following is typically protected by a patent?', options: ['A brand name', 'An original invention or process', 'A logo design'], correctAnswerIndex: 1 },
-  { id: 'q3', module: 'HMU08004', question: 'Why is a diversified funding mix important?', options: ['To depend on a single donor', 'To reduce risk and increase resilience', 'To avoid reporting requirements'], correctAnswerIndex: 1 }
-];
 
-const generateId = (prefix) => `${prefix}-${Date.now()}`;
+/** Normalize pagination meta from API (handles list_of_item.meta, returnData.pagination, or top-level; computes last_page from total/per_page if missing). */
+function getPaginatedMeta(data, perPage) {
+  const returnData = data?.returnData || {};
+  const listOfItem = returnData.list_of_item || returnData;
+  const paginationObj = returnData.pagination || listOfItem?.pagination || data?.pagination;
+  const meta = listOfItem?.meta || returnData.meta || paginationObj || data?.meta || listOfItem || returnData || data;
+  const total = Number(meta.total ?? meta.totalCount ?? meta.total_count ?? meta.totalRecords ?? meta.count ?? paginationObj?.total ?? returnData.total ?? returnData.total_count ?? listOfItem?.total ?? 0) || 0;
+  const per = Number(meta.per_page ?? meta.perPage ?? paginationObj?.per_page ?? returnData.per_page ?? returnData.perPage ?? perPage) || perPage;
+  const current = Number(meta.current_page ?? meta.currentPage ?? paginationObj?.current_page ?? returnData.current_page ?? returnData.currentPage ?? 1) || 1;
+  const lastFromApi = meta.last_page ?? meta.lastPage ?? paginationObj?.last_page ?? returnData.last_page ?? returnData.lastPage;
+  const last = lastFromApi != null ? Number(lastFromApi) : (per > 0 ? Math.max(1, Math.ceil(total / per)) : 1);
+  return {
+    current_page: current,
+    last_page: Math.max(1, last),
+    total,
+    per_page: per
+  };
+}
+
+/** Get list array from API response (list_of_item.data or returnData.data or returnData if array). */
+function getListFromResponse(data) {
+  const returnData = data?.returnData;
+  if (!returnData) return [];
+  const listOfItem = returnData.list_of_item ?? returnData;
+  if (Array.isArray(listOfItem)) return listOfItem;
+  return listOfItem?.data ?? returnData.data ?? [];
+}
+
+const readFileAsDataUrl = (file) =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 
 const ModuleManagement = () => {
-  const [activeTab, setActiveTab] = useState('books');
-  const [books, setBooks] = useState(MOCK_BOOKS);
-  const [videos, setVideos] = useState(MOCK_VIDEOS);
-  const [quizzes, setQuizzes] = useState(MOCK_QUIZZES);
+  const [activeTab, setActiveTab] = useState('module');
+  const [modules, setModules] = useState([]);
+  const [moduleLoading, setModuleLoading] = useState(true);
+  const [moduleError, setModuleError] = useState(null);
+  const [modulePage, setModulePage] = useState(1);
+  const [moduleMeta, setModuleMeta] = useState({ current_page: 1, last_page: 1, total: 0, per_page: MODULE_PER_PAGE });
+  const [moduleOptions, setModuleOptions] = useState([]); // for Quiz & Learning Material dropdowns
+  const [materials, setMaterials] = useState([]);
+  const [materialLoading, setMaterialLoading] = useState(true);
+  const [materialError, setMaterialError] = useState(null);
+  const [materialPage, setMaterialPage] = useState(1);
+  const [materialMeta, setMaterialMeta] = useState({ current_page: 1, last_page: 1, total: 0, per_page: MATERIAL_PER_PAGE });
+  const [materialSaving, setMaterialSaving] = useState(false);
+  const [quizzes, setQuizzes] = useState([]);
+  const [quizLoading, setQuizLoading] = useState(true);
+  const [quizError, setQuizError] = useState(null);
+  const [quizPage, setQuizPage] = useState(1);
+  const [quizMeta, setQuizMeta] = useState({ current_page: 1, last_page: 1, total: 0, per_page: QUIZ_PER_PAGE });
+  const [quizSaving, setQuizSaving] = useState(false);
+  const [certificates, setCertificates] = useState([]);
+  const [certificateLoading, setCertificateLoading] = useState(true);
+  const [certificateError, setCertificateError] = useState(null);
+  const [certificatePage, setCertificatePage] = useState(1);
+  const [certificateMeta, setCertificateMeta] = useState({ current_page: 1, last_page: 1, total: 0, per_page: CERTIFICATE_PER_PAGE });
+  const [certificateSaving, setCertificateSaving] = useState(false);
+  const [userOptions, setUserOptions] = useState([]); // for Certificate user dropdown
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState(null); // 'view' | 'add' | 'edit'
-  const [modalType, setModalType] = useState(null); // 'book' | 'video' | 'quiz'
+  const [modalType, setModalType] = useState(null); // 'module' | 'learning-material' | 'quiz' | 'certificate'
   const [editingItem, setEditingItem] = useState(null);
+  const [moduleSaving, setModuleSaving] = useState(false);
 
-  const [formBook, setFormBook] = useState({ title: '', description: '', module: 'HMU08001', docName: '' });
-  const [formVideo, setFormVideo] = useState({ title: '', description: '', module: 'HMU08001', videoName: '' });
-  const [formQuiz, setFormQuiz] = useState({ module: 'HMU08001', question: '', options: ['', ''], correctAnswerIndex: 0 });
+  const [formModule, setFormModule] = useState({ name: '', description: '', code: '' });
+  const [formMaterial, setFormMaterial] = useState({ module_id: '', title: '', description: '', type: 'document', fileName: '' });
+  const [formQuiz, setFormQuiz] = useState({ module_id: '', name: '', question: '', options: ['', ''], correctAnswerIndex: 0 });
+  const [formCertificate, setFormCertificate] = useState({ user_id: '', fileName: '', file: null });
 
   const openView = (type, item) => {
     setModalType(type);
@@ -65,9 +114,10 @@ const ModuleManagement = () => {
     setModalType(type);
     setModalMode('add');
     setEditingItem(null);
-    if (type === 'book') setFormBook({ title: '', description: '', module: 'HMU08001', docName: '' });
-    if (type === 'video') setFormVideo({ title: '', description: '', module: 'HMU08001', videoName: '' });
-    if (type === 'quiz') setFormQuiz({ module: 'HMU08001', question: '', options: ['', ''], correctAnswerIndex: 0 });
+    if (type === 'module') setFormModule({ name: '', description: '', code: '' });
+    if (type === 'learning-material') setFormMaterial({ module_id: moduleOptions[0]?.id ?? '', title: '', description: '', type: 'document', fileName: '' });
+    if (type === 'quiz') setFormQuiz({ module_id: moduleOptions[0]?.id ?? '', name: '', question: '', options: ['', ''], correctAnswerIndex: 0 });
+    if (type === 'certificate') setFormCertificate({ user_id: userOptions[0]?.id ?? '', fileName: '', file: null });
     setModalOpen(true);
   };
 
@@ -75,9 +125,34 @@ const ModuleManagement = () => {
     setModalType(type);
     setModalMode('edit');
     setEditingItem(item);
-    if (type === 'book') setFormBook({ title: item.title, description: item.description || '', module: item.module, docName: item.docName || '' });
-    if (type === 'video') setFormVideo({ title: item.title, description: item.description || '', module: item.module, videoName: item.videoName || '' });
-    if (type === 'quiz') setFormQuiz({ module: item.module, question: item.question || '', options: item.options?.length ? [...item.options] : ['', ''], correctAnswerIndex: item.correctAnswerIndex ?? 0 });
+    if (type === 'module') {
+      setFormModule({ name: item.name || '', description: item.description || '', code: item.code || '' });
+    }
+    if (type === 'learning-material') {
+      setFormMaterial({
+        module_id: item.module_id ?? '',
+        title: item.title || '',
+        description: item.description || '',
+        type: item.type || 'document',
+        fileName: item.media ? 'Uploaded file' : ''
+      });
+    }
+    if (type === 'quiz') {
+      const opts = item.options?.map((o) => (typeof o === 'object' && o?.value != null ? o.value : o)) ?? [];
+      const idx = item.correct_option != null && item.options?.length
+        ? item.options.findIndex((o) => (typeof o === 'object' ? o.option : o) === item.correct_option)
+        : 0;
+      setFormQuiz({
+        module_id: item.module_id ?? (moduleOptions[0]?.id ?? ''),
+        name: item.quizName ?? '',
+        question: item.question || '',
+        options: opts.length ? opts : ['', ''],
+        correctAnswerIndex: idx >= 0 ? idx : 0
+      });
+    }
+    if (type === 'certificate') {
+      setFormCertificate({ user_id: item.user_id ?? '', fileName: item.path ? 'Uploaded file' : '', file: null });
+    }
     setModalOpen(true);
   };
 
@@ -88,54 +163,358 @@ const ModuleManagement = () => {
     setEditingItem(null);
   };
 
+  const fetchModules = useCallback(async (pageNum = 1, perPage = MODULE_PER_PAGE) => {
+    setModuleLoading(true);
+    setModuleError(null);
+    try {
+      const { data } = await moduleApi.ilist({ page: pageNum, per_page: perPage });
+      const ok = data?.status === 'OK';
+      if (ok) {
+        setModules(getListFromResponse(data));
+        setModuleMeta(getPaginatedMeta(data, perPage));
+        setModuleError(null);
+      } else {
+        setModules([]);
+        setModuleError(data?.errorMessage || 'Failed to load modules');
+      }
+    } catch (err) {
+      setModules([]);
+      setModuleError(err.response?.data?.errorMessage || err.message || 'Failed to load modules');
+    } finally {
+      setModuleLoading(false);
+    }
+  }, []);
+
+  const fetchModuleOptions = useCallback(async () => {
+    try {
+      const { data } = await moduleApi.ilist({ page: 1, per_page: 100 });
+      const ok = data?.status === 'OK';
+      const listOfItem = data?.returnData?.list_of_item;
+      if (ok && listOfItem) setModuleOptions(listOfItem.data || []);
+      else setModuleOptions([]);
+    } catch {
+      setModuleOptions([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'module') fetchModules(modulePage);
+  }, [activeTab, modulePage, fetchModules]);
+
+  useEffect(() => {
+    if (activeTab === 'quiz' || activeTab === 'learning-material') fetchModuleOptions();
+  }, [activeTab, fetchModuleOptions]);
+
+  const fetchMaterials = useCallback(async (pageNum = 1) => {
+    setMaterialLoading(true);
+    setMaterialError(null);
+    try {
+      const { data } = await learningMaterialApi.ilist({ page: pageNum, per_page: MATERIAL_PER_PAGE });
+      const ok = data?.status === 'OK';
+      if (ok) {
+        setMaterials(getListFromResponse(data));
+        setMaterialMeta(getPaginatedMeta(data, MATERIAL_PER_PAGE));
+        setMaterialError(null);
+      } else {
+        setMaterials([]);
+        setMaterialError(data?.errorMessage || 'Failed to load learning materials');
+      }
+    } catch (err) {
+      setMaterials([]);
+      setMaterialError(err.response?.data?.errorMessage || err.message || 'Failed to load learning materials');
+    } finally {
+      setMaterialLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'learning-material') fetchMaterials(materialPage);
+  }, [activeTab, materialPage, fetchMaterials]);
+
+  const fetchQuizzes = useCallback(async (pageNum = 1) => {
+    setQuizLoading(true);
+    setQuizError(null);
+    try {
+      const { data } = await quizApi.ilist({ page: pageNum, per_page: QUIZ_PER_PAGE });
+      const ok = data?.status === 'OK';
+      if (ok) {
+        setQuizzes(getListFromResponse(data));
+        setQuizMeta(getPaginatedMeta(data, QUIZ_PER_PAGE));
+        setQuizError(null);
+      } else {
+        setQuizzes([]);
+        setQuizError(data?.errorMessage || 'Failed to load quizzes');
+      }
+    } catch (err) {
+      setQuizzes([]);
+      setQuizError(err.response?.data?.errorMessage || err.message || 'Failed to load quizzes');
+    } finally {
+      setQuizLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'quiz') fetchQuizzes(quizPage);
+  }, [activeTab, quizPage, fetchQuizzes]);
+
+  const fetchCertificates = useCallback(async (pageNum = 1) => {
+    setCertificateLoading(true);
+    setCertificateError(null);
+    try {
+      const { data } = await certificateApi.ilist({ page: pageNum, per_page: CERTIFICATE_PER_PAGE });
+      const ok = data?.status === 'OK';
+      if (ok) {
+        setCertificates(getListFromResponse(data));
+        setCertificateMeta(getPaginatedMeta(data, CERTIFICATE_PER_PAGE));
+        setCertificateError(null);
+      } else {
+        setCertificates([]);
+        setCertificateError(data?.errorMessage || 'Failed to load certificates');
+      }
+    } catch (err) {
+      setCertificates([]);
+      setCertificateError(err.response?.data?.errorMessage || err.message || 'Failed to load certificates');
+    } finally {
+      setCertificateLoading(false);
+    }
+  }, []);
+
+  const fetchUserOptions = useCallback(async () => {
+    try {
+      const { data } = await usersApi.ilist({ page: 1, per_page: 100 });
+      const ok = data?.status === 'OK';
+      const listOfItem = data?.returnData?.list_of_item;
+      if (ok && listOfItem) setUserOptions(listOfItem.data || []);
+      else setUserOptions([]);
+    } catch {
+      setUserOptions([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === 'certificate') {
+      fetchCertificates(certificatePage);
+      fetchUserOptions();
+    }
+  }, [activeTab, certificatePage, fetchCertificates, fetchUserOptions]);
+
+  const getDeleteLabel = (type, item) => {
+    if (type === 'Module') return item.name || item.code || 'this module';
+    if (type === 'Learning Material') return item.title || 'this item';
+    if (type === 'Quiz') return item.question || item.title || 'this item';
+    if (type === 'Certificate') return item.username || item.email || 'this certificate';
+    return item.title || item.name || 'this item';
+  };
+
   const handleDelete = async (type, item, list, setList) => {
-    const label = type === 'Quiz' ? (item.question || item.title || 'this item') : item.title;
-    const typeLabel = type === 'Book' ? 'Book' : type === 'Video' ? 'Video' : 'Quiz';
+    const label = getDeleteLabel(type, item);
+    const typeLabel = type;
     const result = await swalConfirm({
-      title: 'Delete ' + typeLabel + '?',
-      text: `Are you sure you want to delete "${label.substring(0, 50)}${label.length > 50 ? '...' : ''}"?`,
+      title: `Delete ${typeLabel}?`,
+      text: `Are you sure you want to delete "${String(label).substring(0, 50)}${String(label).length > 50 ? '...' : ''}"?`,
       icon: 'warning',
       showCancelButton: true,
       cancelButtonColor: '#6b7280',
       confirmButtonText: 'Yes, delete it'
     });
-    if (result.isConfirmed) {
-      setList(list.filter((i) => i.id !== item.id));
-      await swalSuccess('Deleted!', 'The item has been deleted.');
+    if (!result.isConfirmed) return;
+    if (type === 'Module') {
+      try {
+        const { data } = await moduleApi.iformAction({ form_method: 'delete', id: item.id });
+        const ok = data?.status === 'OK';
+        const msg = Array.isArray(data?.errorMessage) ? data.errorMessage[0] : data?.errorMessage;
+        if (ok) {
+          await swalSuccess('Deleted', msg || 'Module has been deleted.');
+          fetchModules(moduleMeta.current_page);
+        } else {
+          await swalError('Delete failed', msg || 'Could not delete module.');
+        }
+      } catch (err) {
+        const msg = err.response?.data?.errorMessage;
+        const text = Array.isArray(msg) ? msg[0] : msg || err.message || 'Could not delete module.';
+        await swalError('Error', text);
+      }
+      return;
     }
+    if (type === 'Learning Material') {
+      try {
+        const { data } = await learningMaterialApi.iformAction({ form_method: 'delete', id: item.id });
+        const ok = data?.status === 'OK';
+        const msg = Array.isArray(data?.errorMessage) ? data.errorMessage[0] : data?.errorMessage;
+        if (ok) {
+          await swalSuccess('Deleted', msg || 'Learning material has been deleted.');
+          fetchMaterials(materialMeta.current_page);
+        } else {
+          await swalError('Delete failed', msg || 'Could not delete learning material.');
+        }
+      } catch (err) {
+        const msg = err.response?.data?.errorMessage;
+        const text = Array.isArray(msg) ? msg[0] : msg || err.message || 'Could not delete learning material.';
+        await swalError('Error', text);
+      }
+      return;
+    }
+    if (type === 'Quiz') {
+      try {
+        const { data } = await quizApi.iformAction({ form_method: 'delete', id: item.id });
+        const ok = data?.status === 'OK';
+        const msg = Array.isArray(data?.errorMessage) ? data.errorMessage[0] : data?.errorMessage;
+        if (ok) {
+          await swalSuccess('Deleted', msg || 'Quiz has been deleted.');
+          fetchQuizzes(quizMeta.current_page);
+        } else {
+          await swalError('Delete failed', msg || 'Could not delete quiz.');
+        }
+      } catch (err) {
+        const msg = err.response?.data?.errorMessage;
+        const text = Array.isArray(msg) ? msg[0] : msg || err.message || 'Could not delete quiz.';
+        await swalError('Error', text);
+      }
+      return;
+    }
+    if (type === 'Certificate') {
+      try {
+        const { data } = await certificateApi.iformAction({ form_method: 'delete', id: item.id });
+        const ok = data?.status === 'OK';
+        const msg = Array.isArray(data?.errorMessage) ? data.errorMessage[0] : data?.errorMessage;
+        if (ok) {
+          await swalSuccess('Deleted', msg || 'Certificate has been deleted.');
+          fetchCertificates(certificateMeta.current_page);
+        } else {
+          await swalError('Delete failed', msg || 'Could not delete certificate.');
+        }
+      } catch (err) {
+        const msg = err.response?.data?.errorMessage;
+        const text = Array.isArray(msg) ? msg[0] : msg || err.message || 'Could not delete certificate.';
+        await swalError('Error', text);
+      }
+      return;
+    }
+    setList(list.filter((i) => i.id !== item.id));
+    await swalSuccess('Deleted!', 'The item has been deleted.');
   };
 
-  const handleBookFileChange = (e) => {
-    const file = e.target.files?.[0];
-    setFormBook((p) => ({ ...p, docName: file ? file.name : '' }));
-  };
-
-  const handleVideoFileChange = (e) => {
-    const file = e.target.files?.[0];
-    setFormVideo((p) => ({ ...p, videoName: file ? file.name : '' }));
-  };
-
-  const handleSaveBook = async (e) => {
+  const handleSaveModule = async (e) => {
     e.preventDefault();
-    if (modalMode === 'add') {
-      setBooks((prev) => [...prev, { id: generateId('b'), ...formBook }]);
-    } else {
-      setBooks((prev) => prev.map((b) => (b.id === editingItem.id ? { ...b, ...formBook } : b)));
+    setModuleSaving(true);
+    try {
+      const isEdit = modalType === 'module' && modalMode === 'edit' && editingItem != null;
+      const body = {
+        form_method: 'save',
+        name: formModule.name.trim(),
+        description: formModule.description.trim(),
+        code: formModule.code.trim()
+      };
+      if (isEdit && editingItem.id != null) {
+        body.id = Number(editingItem.id);
+      }
+      const { data } = await moduleApi.iformAction(body);
+      const ok = data?.status === 'OK';
+      const msg = Array.isArray(data?.errorMessage) ? data.errorMessage[0] : data?.errorMessage;
+      if (ok) {
+        closeModal();
+        await swalSuccess(modalMode === 'add' ? 'Module added!' : 'Module updated!', msg || (modalMode === 'add' ? 'The module has been added.' : 'The module has been updated.'));
+        fetchModules(moduleMeta.current_page);
+      } else {
+        await swalError('Save failed', msg || 'Could not save module.');
+      }
+    } catch (err) {
+      const msg = err.response?.data?.errorMessage;
+      const text = Array.isArray(msg) ? msg[0] : msg || err.message || 'Could not save module.';
+      await swalError('Error', text);
+    } finally {
+      setModuleSaving(false);
     }
-    closeModal();
-    await swalSuccess(modalMode === 'add' ? 'Book added!' : 'Book updated!', modalMode === 'add' ? 'The book has been added.' : 'The book has been updated.');
   };
 
-  const handleSaveVideo = async (e) => {
+  const handleCertificateFileChange = (e) => {
+    const file = e.target.files?.[0];
+    setFormCertificate((p) => ({ ...p, fileName: file ? file.name : '', file: file || null }));
+  };
+
+  const handleSaveCertificate = async (e) => {
     e.preventDefault();
-    const payload = { ...formVideo, duration: editingItem?.duration || '' };
-    if (modalMode === 'add') {
-      setVideos((prev) => [...prev, { id: generateId('v'), ...payload }]);
-    } else {
-      setVideos((prev) => prev.map((v) => (v.id === editingItem.id ? { ...v, ...payload } : v)));
+    const userId = formCertificate.user_id === '' ? null : Number(formCertificate.user_id);
+    if (userId == null) {
+      await swalError('Validation', 'Please select a user.');
+      return;
     }
-    closeModal();
-    await swalSuccess(modalMode === 'add' ? 'Video added!' : 'Video updated!', modalMode === 'add' ? 'The video has been added.' : 'The video has been updated.');
+    const isEdit = modalType === 'certificate' && modalMode === 'edit' && editingItem != null;
+    const file = formCertificate.file;
+    if (!file && !isEdit) {
+      await swalError('Validation', 'Please select a certificate file to upload.');
+      return;
+    }
+    setCertificateSaving(true);
+    try {
+      const body = { form_method: 'save', user_id: userId };
+      if (file) {
+        body.certificate = await readFileAsDataUrl(file);
+      }
+      if (isEdit && editingItem.id != null) body.id = Number(editingItem.id);
+      const { data } = await certificateApi.iformAction(body);
+      const ok = data?.status === 'OK';
+      const msg = Array.isArray(data?.errorMessage) ? data.errorMessage[0] : data?.errorMessage;
+      if (ok) {
+        closeModal();
+        await swalSuccess(modalMode === 'add' ? 'Certificate added!' : 'Certificate updated!', msg || (modalMode === 'add' ? 'The certificate has been added.' : 'The certificate has been updated.'));
+        fetchCertificates(certificateMeta.current_page);
+      } else {
+        await swalError('Save failed', msg || 'Could not save certificate.');
+      }
+    } catch (err) {
+      const msg = err.response?.data?.errorMessage;
+      const text = Array.isArray(msg) ? msg[0] : msg || err.message || 'Could not save certificate.';
+      await swalError('Error', text);
+    } finally {
+      setCertificateSaving(false);
+    }
+  };
+
+  const handleMaterialFileChange = (e) => {
+    const file = e.target.files?.[0];
+    setFormMaterial((p) => ({ ...p, fileName: file ? file.name : '' }));
+  };
+
+  const handleMaterialTypeChange = (value) => {
+    setFormMaterial((p) => ({ ...p, type: value, fileName: '' }));
+  };
+
+  const handleSaveMaterial = async (e) => {
+    e.preventDefault();
+    const moduleId = formMaterial.module_id === '' ? null : Number(formMaterial.module_id);
+    if (moduleId == null) {
+      await swalError('Validation', 'Please select a module.');
+      return;
+    }
+    setMaterialSaving(true);
+    try {
+      const isEdit = modalType === 'learning-material' && modalMode === 'edit' && editingItem != null;
+      const body = {
+        form_method: 'save',
+        module_id: moduleId,
+        title: formMaterial.title.trim(),
+        description: formMaterial.description.trim(),
+        type: formMaterial.type
+      };
+      if (isEdit && editingItem.id != null) body.id = Number(editingItem.id);
+      const { data } = await learningMaterialApi.iformAction(body);
+      const ok = data?.status === 'OK';
+      const msg = Array.isArray(data?.errorMessage) ? data.errorMessage[0] : data?.errorMessage;
+      if (ok) {
+        closeModal();
+        await swalSuccess(modalMode === 'add' ? 'Learning material added!' : 'Learning material updated!', msg || (modalMode === 'add' ? 'The learning material has been added.' : 'The learning material has been updated.'));
+        fetchMaterials(materialMeta.current_page);
+      } else {
+        await swalError('Save failed', msg || 'Could not save learning material.');
+      }
+    } catch (err) {
+      const msg = err.response?.data?.errorMessage;
+      const text = Array.isArray(msg) ? msg[0] : msg || err.message || 'Could not save learning material.';
+      await swalError('Error', text);
+    } finally {
+      setMaterialSaving(false);
+    }
   };
 
   const addQuizOption = () => {
@@ -159,137 +538,251 @@ const ModuleManagement = () => {
 
   const handleSaveQuiz = async (e) => {
     e.preventDefault();
-    const options = formQuiz.options.filter((o) => o.trim() !== '');
-    const correctText = (formQuiz.options[formQuiz.correctAnswerIndex] || '').trim();
-    let correctAnswerIndex = correctText ? options.indexOf(correctText) : 0;
-    if (correctAnswerIndex < 0) correctAnswerIndex = 0;
-    const payload = { module: formQuiz.module, question: formQuiz.question.trim(), options, correctAnswerIndex };
-    if (modalMode === 'add') {
-      setQuizzes((prev) => [...prev, { id: generateId('q'), ...payload }]);
-    } else {
-      setQuizzes((prev) => prev.map((q) => (q.id === editingItem.id ? { ...q, ...payload } : q)));
+    const moduleId = formQuiz.module_id === '' ? null : Number(formQuiz.module_id);
+    if (moduleId == null) {
+      await swalError('Validation', 'Please select a module.');
+      return;
     }
-    closeModal();
-    await swalSuccess(modalMode === 'add' ? 'Quiz added!' : 'Quiz updated!', modalMode === 'add' ? 'The quiz has been added.' : 'The quiz has been updated.');
+    const optionValues = formQuiz.options.filter((o) => o.trim() !== '');
+    if (optionValues.length < 2) {
+      await swalError('Validation', 'Please add at least 2 options.');
+      return;
+    }
+    let correctIdx = formQuiz.correctAnswerIndex;
+    if (correctIdx >= optionValues.length) correctIdx = 0;
+    const optionLetters = 'abcdefghijklmnopqrstuvwxyz'.split('');
+    const optionsForApi = optionValues.map((value, i) => ({ option: optionLetters[i], value: value.trim() }));
+    const correct_option = optionLetters[correctIdx];
+
+    setQuizSaving(true);
+    try {
+      const isEdit = modalType === 'quiz' && modalMode === 'edit' && editingItem != null;
+      const body = {
+        form_method: 'save',
+        module_id: moduleId,
+        name: (formQuiz.name || formQuiz.question || '').trim() || 'Quiz',
+        question: formQuiz.question.trim(),
+        options: optionsForApi,
+        correct_option
+      };
+      if (isEdit && editingItem.id != null) body.id = Number(editingItem.id);
+      const { data } = await quizApi.iformAction(body);
+      const ok = data?.status === 'OK';
+      const msg = Array.isArray(data?.errorMessage) ? data.errorMessage[0] : data?.errorMessage;
+      if (ok) {
+        closeModal();
+        await swalSuccess(modalMode === 'add' ? 'Quiz added!' : 'Quiz updated!', msg || (modalMode === 'add' ? 'The quiz has been added.' : 'The quiz has been updated.'));
+        fetchQuizzes(quizMeta.current_page);
+      } else {
+        await swalError('Save failed', msg || 'Could not save quiz.');
+      }
+    } catch (err) {
+      const msg = err.response?.data?.errorMessage;
+      const text = Array.isArray(msg) ? msg[0] : msg || err.message || 'Could not save quiz.';
+      await swalError('Error', text);
+    } finally {
+      setQuizSaving(false);
+    }
   };
 
   const renderModal = () => {
     if (!modalOpen || !modalType) return null;
 
     if (modalMode === 'view' && editingItem) {
-      const isBook = modalType === 'book';
-      const isVideo = modalType === 'video';
-      const title = isBook ? 'View Book' : isVideo ? 'View Video' : 'View Quiz';
+      const viewTitles = {
+        module: 'View Module',
+        'learning-material': 'View Learning Material',
+        quiz: 'View Quiz',
+        certificate: 'View Certificate'
+      };
+      const title = viewTitles[modalType] || 'View';
 
-      const bookRows = [
-        ['Title', editingItem.title],
-        ['Description', editingItem.description || '—'],
-        ['Module', editingItem.module],
-        ['Document', editingItem.docName || editingItem.doc || '—']
-      ];
-      const videoRows = [
-        ['Title', editingItem.title],
-        ['Description', editingItem.description || '—'],
-        ['Module', editingItem.module],
-        ['Video', editingItem.videoName || editingItem.video || '—'],
-        ['Duration', editingItem.duration || '—']
-      ];
-      const optionsContent = editingItem.options?.length
-        ? editingItem.options.map((opt, i) => (
-            <React.Fragment key={i}>
-              {opt}
-              {i < editingItem.options.length - 1 && <br />}
-            </React.Fragment>
-          ))
-        : '—';
-      const quizRows = [
-        ['Module', editingItem.module],
-        ['Question', editingItem.question || '—'],
-        ['Options', optionsContent],
-        ['Correct answer', editingItem.options?.[editingItem.correctAnswerIndex] ?? '—']
-      ];
+      if (modalType === 'module') {
+        const rows = [
+          ['Name', editingItem.name || '—'],
+          ['Description', editingItem.description || '—'],
+          ['Code', editingItem.code || '—']
+        ];
+        return (
+          <Modal title={title} show={modalOpen} onClose={closeModal}>
+            <table className="modal-view-table">
+              <tbody>
+                {rows.map(([label, value], i) => (
+                  <tr key={i}><th>{label}</th><td>{value}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </Modal>
+        );
+      }
 
-      const rows = isBook ? bookRows : isVideo ? videoRows : quizRows;
+      if (modalType === 'certificate') {
+        const pathCell = editingItem.path ? (
+          <a href={editingItem.path} target="_blank" rel="noopener noreferrer">View certificate</a>
+        ) : '—';
+        const rows = [
+          ['User', editingItem.username || editingItem.email || '—'],
+          ['Email', editingItem.email || '—'],
+          ['Phone', editingItem.phone || '—'],
+          ['Certificate', pathCell]
+        ];
+        return (
+          <Modal title={title} show={modalOpen} onClose={closeModal}>
+            <table className="modal-view-table">
+              <tbody>
+                {rows.map(([label, value], i) => (
+                  <tr key={i}><th>{label}</th><td>{value}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </Modal>
+        );
+      }
 
-      return (
-        <Modal title={title} show={modalOpen} onClose={closeModal}>
-          <table className="modal-view-table">
-            <tbody>
-              {rows.map(([label, value], i) => (
-                <tr key={i}><th>{label}</th><td>{value}</td></tr>
-              ))}
-            </tbody>
-          </table>
-        </Modal>
-      );
+      if (modalType === 'learning-material') {
+        const mediaCell = editingItem.media ? (
+          <a href={editingItem.media} target="_blank" rel="noopener noreferrer">View file</a>
+        ) : '—';
+        const rows = [
+          ['Module', editingItem.module || '—'],
+          ['Title', editingItem.title],
+          ['Description', editingItem.description || '—'],
+          ['Type', editingItem.type === 'document' ? 'Document' : 'Media'],
+          ['Media', mediaCell]
+        ];
+        return (
+          <Modal title={title} show={modalOpen} onClose={closeModal}>
+            <table className="modal-view-table">
+              <tbody>
+                {rows.map(([label, value], i) => (
+                  <tr key={i}><th>{label}</th><td>{value}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </Modal>
+        );
+      }
+
+      if (modalType === 'quiz') {
+        const opts = editingItem.options ?? [];
+        const optionsContent = opts.length
+          ? opts.map((o, i) => (
+              <React.Fragment key={i}>
+                {typeof o === 'object' ? o.value : o}
+                {i < opts.length - 1 && <br />}
+              </React.Fragment>
+            ))
+          : '—';
+        const correctOpt = editingItem.correct_option != null && opts.length
+          ? opts.find((o) => (typeof o === 'object' ? o.option : o) === editingItem.correct_option)
+          : null;
+        const correctAnswerDisplay = correctOpt != null ? (typeof correctOpt === 'object' ? correctOpt.value : correctOpt) : '—';
+        const quizRows = [
+          ['Module', editingItem.name || '—'],
+          ['Question', editingItem.question || '—'],
+          ['Options', optionsContent],
+          ['Correct answer', correctAnswerDisplay]
+        ];
+        return (
+          <Modal title={title} show={modalOpen} onClose={closeModal}>
+            <table className="modal-view-table">
+              <tbody>
+                {quizRows.map(([label, value], i) => (
+                  <tr key={i}><th>{label}</th><td>{value}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </Modal>
+        );
+      }
     }
 
-    if (modalType === 'book') {
+    if (modalType === 'module') {
       return (
-        <Modal title={modalMode === 'add' ? 'Add Book' : 'Edit Book'} show={modalOpen} onClose={closeModal}>
-          <form className="modal-form" onSubmit={handleSaveBook}>
+        <Modal title={modalMode === 'add' ? 'Add Module' : 'Edit Module'} show={modalOpen} onClose={closeModal}>
+          <form className="modal-form" onSubmit={handleSaveModule}>
             <div className="form-row">
-              <label>Title</label>
-              <input type="text" value={formBook.title} onChange={(e) => setFormBook((p) => ({ ...p, title: e.target.value }))} required />
+              <label>Name</label>
+              <input type="text" value={formModule.name} onChange={(e) => setFormModule((p) => ({ ...p, name: e.target.value }))} required disabled={moduleSaving} />
             </div>
             <div className="form-row form-row-textarea">
               <label>Description</label>
-              <textarea value={formBook.description} onChange={(e) => setFormBook((p) => ({ ...p, description: e.target.value }))} rows={3} className="modal-form-textarea" />
+              <textarea value={formModule.description} onChange={(e) => setFormModule((p) => ({ ...p, description: e.target.value }))} rows={3} className="modal-form-textarea" disabled={moduleSaving} />
             </div>
             <div className="form-row">
-              <label>Module</label>
-              <select value={formBook.module} onChange={(e) => setFormBook((p) => ({ ...p, module: e.target.value }))}>
-                {MODULE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </div>
-            <div className="form-row">
-              <label>Upload doc</label>
-              <div className="modal-form-file-wrap">
-                <input type="file" accept=".pdf,.doc,.docx" onChange={handleBookFileChange} className="modal-form-file" id="book-doc-upload" />
-                <label htmlFor="book-doc-upload" className="modal-form-file-label">
-                  {formBook.docName || 'Choose file...'}
-                </label>
-              </div>
+              <label>Code</label>
+              <input type="text" value={formModule.code} onChange={(e) => setFormModule((p) => ({ ...p, code: e.target.value }))} required disabled={moduleSaving} />
             </div>
             <div className="modal-form-actions">
-              <button type="button" className="modal-btn modal-btn-secondary" onClick={closeModal}>Cancel</button>
-              <button type="submit" className="modal-btn modal-btn-primary">Save</button>
+              <button type="button" className="modal-btn modal-btn-secondary" onClick={closeModal} disabled={moduleSaving}>Cancel</button>
+              <button type="submit" className="modal-btn modal-btn-primary" disabled={moduleSaving}>{moduleSaving ? 'Saving…' : 'Save'}</button>
             </div>
           </form>
         </Modal>
       );
     }
 
-    if (modalType === 'video') {
+    if (modalType === 'learning-material') {
+      const isDocument = formMaterial.type === 'document';
+      const uploadAccept = isDocument ? '.pdf,.doc,.docx' : 'video/*,.mp4,.webm,.mov';
+      const uploadLabel = isDocument ? 'Upload document (optional)' : 'Upload video (optional)';
+
       return (
-        <Modal title={modalMode === 'add' ? 'Add Video' : 'Edit Video'} show={modalOpen} onClose={closeModal}>
-          <form className="modal-form" onSubmit={handleSaveVideo}>
-            <div className="form-row">
-              <label>Title</label>
-              <input type="text" value={formVideo.title} onChange={(e) => setFormVideo((p) => ({ ...p, title: e.target.value }))} required />
-            </div>
-            <div className="form-row form-row-textarea">
-              <label>Description</label>
-              <textarea value={formVideo.description} onChange={(e) => setFormVideo((p) => ({ ...p, description: e.target.value }))} rows={3} className="modal-form-textarea" />
-            </div>
+        <Modal title={modalMode === 'add' ? 'Add Learning Material' : 'Edit Learning Material'} show={modalOpen} onClose={closeModal}>
+          <form className="modal-form" onSubmit={handleSaveMaterial}>
             <div className="form-row">
               <label>Module</label>
-              <select value={formVideo.module} onChange={(e) => setFormVideo((p) => ({ ...p, module: e.target.value }))}>
-                {MODULE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              <select
+                value={formMaterial.module_id}
+                onChange={(e) => setFormMaterial((p) => ({ ...p, module_id: e.target.value }))}
+                required
+                disabled={materialSaving}
+              >
+                <option value="">Select module</option>
+                {moduleOptions.map((m) => (
+                  <option key={m.id} value={m.id}>{m.code} – {m.name}</option>
+                ))}
               </select>
             </div>
             <div className="form-row">
-              <label>Upload video</label>
+              <label>Title</label>
+              <input type="text" value={formMaterial.title} onChange={(e) => setFormMaterial((p) => ({ ...p, title: e.target.value }))} required disabled={materialSaving} />
+            </div>
+            <div className="form-row form-row-textarea">
+              <label>Description</label>
+              <textarea value={formMaterial.description} onChange={(e) => setFormMaterial((p) => ({ ...p, description: e.target.value }))} rows={3} className="modal-form-textarea" disabled={materialSaving} />
+            </div>
+            <div className="form-row">
+              <label>Type</label>
+              <select
+                value={formMaterial.type}
+                onChange={(e) => handleMaterialTypeChange(e.target.value)}
+                disabled={materialSaving}
+              >
+                {MATERIAL_TYPES.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-row">
+              <label>{uploadLabel}</label>
               <div className="modal-form-file-wrap">
-                <input type="file" accept="video/*,.mp4,.webm,.mov" onChange={handleVideoFileChange} className="modal-form-file" id="video-file-upload" />
-                <label htmlFor="video-file-upload" className="modal-form-file-label">
-                  {formVideo.videoName || 'Choose file...'}
+                <input
+                  type="file"
+                  accept={uploadAccept}
+                  onChange={handleMaterialFileChange}
+                  className="modal-form-file"
+                  id="learning-material-upload"
+                  key={formMaterial.type}
+                />
+                <label htmlFor="learning-material-upload" className="modal-form-file-label">
+                  {formMaterial.fileName || (isDocument ? 'Choose document...' : 'Choose video...')}
                 </label>
               </div>
             </div>
             <div className="modal-form-actions">
-              <button type="button" className="modal-btn modal-btn-secondary" onClick={closeModal}>Cancel</button>
-              <button type="submit" className="modal-btn modal-btn-primary">Save</button>
+              <button type="button" className="modal-btn modal-btn-secondary" onClick={closeModal} disabled={materialSaving}>Cancel</button>
+              <button type="submit" className="modal-btn modal-btn-primary" disabled={materialSaving}>{materialSaving ? 'Saving…' : 'Save'}</button>
             </div>
           </form>
         </Modal>
@@ -302,37 +795,86 @@ const ModuleManagement = () => {
           <form className="modal-form" onSubmit={handleSaveQuiz}>
             <div className="form-row">
               <label>Module</label>
-              <select value={formQuiz.module} onChange={(e) => setFormQuiz((p) => ({ ...p, module: e.target.value }))}>
-                {MODULE_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+              <select value={formQuiz.module_id} onChange={(e) => setFormQuiz((p) => ({ ...p, module_id: e.target.value }))} required disabled={quizSaving}>
+                <option value="">Select module</option>
+                {moduleOptions.map((m) => (
+                  <option key={m.id} value={m.id}>{m.code} – {m.name}</option>
+                ))}
               </select>
+            </div>
+            <div className="form-row">
+              <label>Name (optional)</label>
+              <input type="text" value={formQuiz.name} onChange={(e) => setFormQuiz((p) => ({ ...p, name: e.target.value }))} placeholder="Quiz title" disabled={quizSaving} />
             </div>
             <div className="form-row form-row-textarea">
               <label>Question</label>
-              <textarea value={formQuiz.question} onChange={(e) => setFormQuiz((p) => ({ ...p, question: e.target.value }))} rows={2} className="modal-form-textarea" required />
+              <textarea value={formQuiz.question} onChange={(e) => setFormQuiz((p) => ({ ...p, question: e.target.value }))} rows={2} className="modal-form-textarea" required disabled={quizSaving} />
             </div>
             <div className="form-row form-row-options">
               <label>Options</label>
               <div className="modal-form-options-list">
                 {formQuiz.options.map((opt, index) => (
                   <div key={index} className="modal-form-option-row">
-                    <input type="text" value={opt} onChange={(e) => updateQuizOption(index, e.target.value)} placeholder={`Option ${index + 1}`} className="modal-form-option-input" />
-                    <button type="button" className="modal-form-option-remove" onClick={() => removeQuizOption(index)} title="Remove option" aria-label="Remove option">&times;</button>
+                    <input type="text" value={opt} onChange={(e) => updateQuizOption(index, e.target.value)} placeholder={`Option ${index + 1}`} className="modal-form-option-input" disabled={quizSaving} />
+                    <button type="button" className="modal-form-option-remove" onClick={() => removeQuizOption(index)} title="Remove option" aria-label="Remove option" disabled={quizSaving}>&times;</button>
                   </div>
                 ))}
-                <button type="button" className="modal-form-option-add" onClick={addQuizOption}>+ Add option</button>
+                <button type="button" className="modal-form-option-add" onClick={addQuizOption} disabled={quizSaving}>+ Add option</button>
               </div>
             </div>
             <div className="form-row">
               <label>Correct answer</label>
-              <select value={formQuiz.correctAnswerIndex} onChange={(e) => setFormQuiz((p) => ({ ...p, correctAnswerIndex: parseInt(e.target.value, 10) }))}>
+              <select value={formQuiz.correctAnswerIndex} onChange={(e) => setFormQuiz((p) => ({ ...p, correctAnswerIndex: parseInt(e.target.value, 10) }))} disabled={quizSaving}>
                 {formQuiz.options.map((opt, index) => (
                   <option key={index} value={index}>{opt.trim() || `Option ${index + 1}`}</option>
                 ))}
               </select>
             </div>
             <div className="modal-form-actions">
-              <button type="button" className="modal-btn modal-btn-secondary" onClick={closeModal}>Cancel</button>
-              <button type="submit" className="modal-btn modal-btn-primary">Save</button>
+              <button type="button" className="modal-btn modal-btn-secondary" onClick={closeModal} disabled={quizSaving}>Cancel</button>
+              <button type="submit" className="modal-btn modal-btn-primary" disabled={quizSaving}>{quizSaving ? 'Saving…' : 'Save'}</button>
+            </div>
+          </form>
+        </Modal>
+      );
+    }
+
+    if (modalType === 'certificate') {
+      return (
+        <Modal title={modalMode === 'add' ? 'Add Certificate' : 'Edit Certificate'} show={modalOpen} onClose={closeModal}>
+          <form className="modal-form" onSubmit={handleSaveCertificate}>
+            <div className="form-row">
+              <label>User</label>
+              <select
+                value={formCertificate.user_id}
+                onChange={(e) => setFormCertificate((p) => ({ ...p, user_id: e.target.value }))}
+                required
+                disabled={certificateSaving}
+              >
+                <option value="">Select user</option>
+                {userOptions.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name} – {u.email}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-row">
+              <label>Certificate upload {modalMode === 'edit' && '(leave empty to keep current)'}</label>
+              <div className="modal-form-file-wrap">
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,image/*"
+                  onChange={handleCertificateFileChange}
+                  className="modal-form-file"
+                  id="certificate-upload"
+                />
+                <label htmlFor="certificate-upload" className="modal-form-file-label">
+                  {formCertificate.fileName || 'Choose file...'}
+                </label>
+              </div>
+            </div>
+            <div className="modal-form-actions">
+              <button type="button" className="modal-btn modal-btn-secondary" onClick={closeModal} disabled={certificateSaving}>Cancel</button>
+              <button type="submit" className="modal-btn modal-btn-primary" disabled={certificateSaving}>{certificateSaving ? 'Saving…' : 'Save'}</button>
             </div>
           </form>
         </Modal>
@@ -343,113 +885,217 @@ const ModuleManagement = () => {
   };
 
   const renderTable = () => {
-    if (activeTab === 'books') {
+    if (activeTab === 'module') {
+      const total = moduleMeta.total;
+      const currentPage = moduleMeta.current_page;
+      const perPage = moduleMeta.per_page;
+      const lastPage = Math.max(moduleMeta.last_page, perPage > 0 && total > 0 ? Math.ceil(total / perPage) : 1);
+      const from = total > 0 ? (currentPage - 1) * perPage + 1 : 0;
+      const to = Math.min(currentPage * perPage, total);
       return (
         <div className="management-table-wrap">
           <div className="management-toolbar">
-            <button type="button" className="action-btn" onClick={() => openAdd('book')}>+ Add Book</button>
+            <button type="button" className="action-btn" onClick={() => openAdd('module')}>+ Add Module</button>
           </div>
-          <table className="management-table">
-            <thead>
-              <tr>
-                <th>Title</th>
-                <th>Description</th>
-                <th>Module</th>
-                <th>Doc</th>
-                <th className="management-th-actions">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {books.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.title}</td>
-                  <td className="management-td-desc">{row.description || '—'}</td>
-                  <td>{row.module}</td>
-                  <td>{row.docName || '—'}</td>
-                  <td className="management-td-actions">
-                    <button type="button" className="management-btn management-btn-view" onClick={() => openView('book', row)}>View</button>
-                    <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('book', row)}>Edit</button>
-                    <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Book', row, books, setBooks)}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {books.length === 0 && <p className="management-empty">No books yet. Add one to get started.</p>}
+          {moduleError && <p className="management-error">{moduleError}</p>}
+          {moduleLoading ? (
+            <p className="management-loading">Loading modules…</p>
+          ) : (
+            <>
+              <table className="management-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Description</th>
+                    <th>Code</th>
+                    <th className="management-th-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {modules.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.name}</td>
+                      <td className="management-td-desc">{row.description || '—'}</td>
+                      <td>{row.code}</td>
+                      <td className="management-td-actions">
+                        <button type="button" className="management-btn management-btn-view" onClick={() => openView('module', row)}>View</button>
+                        <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('module', row)}>Edit</button>
+                        <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Module', row, modules, setModules)}>Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {modules.length === 0 && <p className="management-empty">No modules yet. Add one to get started.</p>}
+              <Pagination currentPage={currentPage} lastPage={lastPage} onPageChange={setModulePage} total={total} from={from} to={to} />
+            </>
+          )}
         </div>
       );
     }
 
-    if (activeTab === 'videos') {
+    if (activeTab === 'learning-material') {
+      const total = materialMeta.total;
+      const currentPage = materialMeta.current_page;
+      const perPage = materialMeta.per_page;
+      const lastPage = Math.max(materialMeta.last_page, perPage > 0 && total > 0 ? Math.ceil(total / perPage) : 1);
+      const from = total > 0 ? (currentPage - 1) * perPage + 1 : 0;
+      const to = Math.min(currentPage * perPage, total);
       return (
         <div className="management-table-wrap">
           <div className="management-toolbar">
-            <button type="button" className="action-btn" onClick={() => openAdd('video')}>+ Add Video</button>
+            <button type="button" className="action-btn" onClick={() => openAdd('learning-material')}>+ Add Learning Material</button>
           </div>
-          <table className="management-table">
-            <thead>
-              <tr>
-                <th>Title</th>
-                <th>Description</th>
-                <th>Module</th>
-                <th>Video</th>
-                <th className="management-th-actions">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {videos.map((row) => (
-                <tr key={row.id}>
-                  <td>{row.title}</td>
-                  <td className="management-td-desc">{row.description || '—'}</td>
-                  <td>{row.module}</td>
-                  <td>{row.videoName || '—'}</td>
-                  <td className="management-td-actions">
-                    <button type="button" className="management-btn management-btn-view" onClick={() => openView('video', row)}>View</button>
-                    <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('video', row)}>Edit</button>
-                    <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Video', row, videos, setVideos)}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {videos.length === 0 && <p className="management-empty">No videos yet. Add one to get started.</p>}
+          {materialError && <p className="management-error">{materialError}</p>}
+          {materialLoading ? (
+            <p className="management-loading">Loading learning materials…</p>
+          ) : (
+            <>
+              <table className="management-table">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Description</th>
+                    <th>Module</th>
+                    <th>Type</th>
+                    <th>Media</th>
+                    <th className="management-th-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {materials.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.title}</td>
+                      <td className="management-td-desc">{row.description || '—'}</td>
+                      <td>{row.module || '—'}</td>
+                      <td>{row.type === 'document' ? 'Document' : 'Media'}</td>
+                      <td>
+                        {row.media ? (
+                          <a href={row.media} target="_blank" rel="noopener noreferrer">View</a>
+                        ) : '—'}
+                      </td>
+                      <td className="management-td-actions">
+                        <button type="button" className="management-btn management-btn-view" onClick={() => openView('learning-material', row)}>View</button>
+                        <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('learning-material', row)}>Edit</button>
+                        <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Learning Material', row, materials, setMaterials)}>Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {materials.length === 0 && <p className="management-empty">No learning materials yet. Add one to get started.</p>}
+              <Pagination currentPage={currentPage} lastPage={lastPage} onPageChange={setMaterialPage} total={total} from={from} to={to} />
+            </>
+          )}
         </div>
       );
     }
 
     if (activeTab === 'quiz') {
+      const total = quizMeta.total;
+      const currentPage = quizMeta.current_page;
+      const perPage = quizMeta.per_page;
+      const lastPage = Math.max(quizMeta.last_page, perPage > 0 && total > 0 ? Math.ceil(total / perPage) : 1);
+      const from = total > 0 ? (currentPage - 1) * perPage + 1 : 0;
+      const to = Math.min(currentPage * perPage, total);
       return (
         <div className="management-table-wrap">
           <div className="management-toolbar">
             <button type="button" className="action-btn" onClick={() => openAdd('quiz')}>+ Add Quiz</button>
           </div>
-          <table className="management-table">
-            <thead>
-              <tr>
-                <th>Question</th>
-                <th>Module</th>
-                <th>Options</th>
-                <th>Correct answer</th>
-                <th className="management-th-actions">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {quizzes.map((row) => (
-                <tr key={row.id}>
-                  <td className="management-td-desc">{row.question || '—'}</td>
-                  <td>{row.module}</td>
-                  <td>{row.options?.length ?? 0}</td>
-                  <td>{row.options?.[row.correctAnswerIndex] ?? '—'}</td>
-                  <td className="management-td-actions">
-                    <button type="button" className="management-btn management-btn-view" onClick={() => openView('quiz', row)}>View</button>
-                    <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('quiz', row)}>Edit</button>
-                    <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Quiz', row, quizzes, setQuizzes)}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {quizzes.length === 0 && <p className="management-empty">No quizzes yet. Add one to get started.</p>}
+          {quizError && <p className="management-error">{quizError}</p>}
+          {quizLoading ? (
+            <p className="management-loading">Loading quizzes…</p>
+          ) : (
+            <>
+              <table className="management-table">
+                <thead>
+                  <tr>
+                    <th>Question</th>
+                    <th>Module</th>
+                    <th>Options</th>
+                    <th>Correct answer</th>
+                    <th className="management-th-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {quizzes.map((row) => {
+                    const opts = row.options ?? [];
+                    const correctOpt = row.correct_option != null ? opts.find((o) => (typeof o === 'object' ? o.option : o) === row.correct_option) : null;
+                    const correctDisplay = correctOpt != null ? (typeof correctOpt === 'object' ? correctOpt.value : correctOpt) : '—';
+                    return (
+                      <tr key={row.id}>
+                        <td className="management-td-desc">{row.question || '—'}</td>
+                        <td>{row.name || '—'}</td>
+                        <td>{opts.length}</td>
+                        <td>{correctDisplay}</td>
+                        <td className="management-td-actions">
+                          <button type="button" className="management-btn management-btn-view" onClick={() => openView('quiz', row)}>View</button>
+                          <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('quiz', row)}>Edit</button>
+                          <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Quiz', row, quizzes, setQuizzes)}>Delete</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {quizzes.length === 0 && <p className="management-empty">No quizzes yet. Add one to get started.</p>}
+              <Pagination currentPage={currentPage} lastPage={lastPage} onPageChange={setQuizPage} total={total} from={from} to={to} />
+            </>
+          )}
+        </div>
+      );
+    }
+
+    if (activeTab === 'certificate') {
+      const total = certificateMeta.total;
+      const currentPage = certificateMeta.current_page;
+      const perPage = certificateMeta.per_page;
+      const lastPage = Math.max(certificateMeta.last_page, perPage > 0 && total > 0 ? Math.ceil(total / perPage) : 1);
+      const from = total > 0 ? (currentPage - 1) * perPage + 1 : 0;
+      const to = Math.min(currentPage * perPage, total);
+      return (
+        <div className="management-table-wrap">
+          <div className="management-toolbar">
+            <button type="button" className="action-btn" onClick={() => openAdd('certificate')}>+ Add Certificate</button>
+          </div>
+          {certificateError && <p className="management-error">{certificateError}</p>}
+          {certificateLoading ? (
+            <p className="management-loading">Loading certificates…</p>
+          ) : (
+            <>
+              <table className="management-table">
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Email</th>
+                    <th>Certificate</th>
+                    <th className="management-th-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {certificates.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.username || '—'}</td>
+                      <td>{row.email || '—'}</td>
+                      <td>
+                        {row.path ? (
+                          <a href={row.path} target="_blank" rel="noopener noreferrer">View</a>
+                        ) : '—'}
+                      </td>
+                      <td className="management-td-actions">
+                        <button type="button" className="management-btn management-btn-view" onClick={() => openView('certificate', row)}>View</button>
+                        <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('certificate', row)}>Edit</button>
+                        <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Certificate', row, certificates, setCertificates)}>Delete</button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {certificates.length === 0 && <p className="management-empty">No certificates yet. Add one to get started.</p>}
+              <Pagination currentPage={currentPage} lastPage={lastPage} onPageChange={setCertificatePage} total={total} from={from} to={to} />
+            </>
+          )}
         </div>
       );
     }

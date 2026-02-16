@@ -1,11 +1,34 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardShell from './DashboardShell';
 import SectionHeader from '../components/SectionHeader';
 import StatusTabs from '../components/StatusTabs';
 import ModuleManagement from './ModuleManagement';
 import UserManagement from './UserManagement';
-import { getUserData, getModulesForUser } from './dashboardService';
+import Pagination from '../components/Pagination';
+import { getUserData } from './dashboardService';
+import { moduleApi } from '../api/api';
+
+const MODULE_LIST_PER_PAGE = 6;
+
+function getModuleListFromResponse(data) {
+  const returnData = data?.returnData;
+  if (!returnData) return [];
+  const listOfItem = returnData.list_of_item ?? returnData;
+  if (Array.isArray(listOfItem)) return listOfItem;
+  return listOfItem?.data ?? returnData.data ?? [];
+}
+
+function getModuleMetaFromResponse(data, perPage) {
+  const returnData = data?.returnData || {};
+  const listOfItem = returnData.list_of_item || returnData;
+  const meta = listOfItem?.meta || returnData.meta || listOfItem || returnData || data;
+  const total = Number(meta.total ?? meta.totalCount ?? returnData.total ?? 0) || 0;
+  const per = Number(meta.per_page ?? meta.perPage ?? perPage) || perPage;
+  const current = Number(meta.current_page ?? meta.currentPage ?? 1) || 1;
+  const last = meta.last_page ?? meta.lastPage ?? (per > 0 ? Math.max(1, Math.ceil(total / per)) : 1);
+  return { current_page: current, last_page: Math.max(1, Number(last) || 1), total, per_page: per };
+}
 
 const MENU_LABELS = {
   home: 'Home',
@@ -27,6 +50,11 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [userData, setUserData] = useState(null);
+  const [apiModules, setApiModules] = useState([]);
+  const [apiModuleLoading, setApiModuleLoading] = useState(false);
+  const [apiModuleError, setApiModuleError] = useState(null);
+  const [apiModulePage, setApiModulePage] = useState(1);
+  const [apiModuleMeta, setApiModuleMeta] = useState({ current_page: 1, last_page: 1, total: 0, per_page: MODULE_LIST_PER_PAGE });
 
   const activeMenu = searchParams.get('menu') || 'home';
   const activeTab = searchParams.get('tab') || 'all';
@@ -35,6 +63,31 @@ const Dashboard = () => {
     setUserData(getUserData());
   }, []);
 
+  const fetchApiModules = useCallback(async (pageNum) => {
+    setApiModuleLoading(true);
+    setApiModuleError(null);
+    try {
+      const { data } = await moduleApi.ilist({ page: pageNum, per_page: MODULE_LIST_PER_PAGE });
+      if (data?.status === 'OK') {
+        setApiModules(getModuleListFromResponse(data));
+        setApiModuleMeta(getModuleMetaFromResponse(data, MODULE_LIST_PER_PAGE));
+      } else {
+        setApiModules([]);
+        setApiModuleError(data?.errorMessage || 'Failed to load modules.');
+      }
+    } catch (err) {
+      setApiModules([]);
+      setApiModuleError(err.response?.data?.errorMessage || err.message || 'Failed to load modules.');
+    } finally {
+      setApiModuleLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeMenu === 'mymodule') fetchApiModules(apiModulePage);
+    if (activeMenu === 'home') fetchApiModules(1);
+  }, [activeMenu, apiModulePage, fetchApiModules]);
+
   const setTab = (nextTab) => {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set('menu', activeMenu);
@@ -42,65 +95,58 @@ const Dashboard = () => {
     setSearchParams(nextParams);
   };
 
-  const modules = useMemo(
-    () => getModulesForUser(userData?.id) ?? [],
-    [userData?.id]
-  );
-
-  const filteredModules = useMemo(() => {
-    if (activeTab === 'active') return modules.filter((m) => m.progress < 100);
-    if (activeTab === 'expired') return modules.filter((m) => m.progress >= 100);
-    return modules;
-  }, [activeTab, modules]);
-
   const title = MENU_LABELS[activeMenu] || 'Home';
 
   const renderBody = () => {
     if (activeMenu === 'mymodule') {
+      const total = apiModuleMeta.total;
+      const lastPage = Math.max(apiModuleMeta.last_page, apiModuleMeta.per_page > 0 && total > 0 ? Math.ceil(total / apiModuleMeta.per_page) : 1);
+      const currentPage = apiModuleMeta.current_page;
+      const from = total > 0 ? (currentPage - 1) * apiModuleMeta.per_page + 1 : 0;
+      const to = Math.min(currentPage * apiModuleMeta.per_page, total);
+      const filteredForTab =
+        activeTab === 'active'
+          ? apiModules.filter((m) => (m.progress ?? 0) < 100)
+          : activeTab === 'expired'
+            ? apiModules.filter((m) => (m.progress ?? 0) >= 100)
+            : apiModules;
       return (
         <div className="dashboard-content">
           <div className="mymodule-course-list">
-            {filteredModules.map((module) => (
-              <div
-                key={module.code}
-                className="mymodule-course-card"
-                onClick={() => navigate(module.route)}
-              >
-                <div className="mymodule-course-main">
-                  <div className="mymodule-course-logo">HM</div>
-                  <div className="mymodule-course-text">
-                    <div className="mymodule-course-name">
-                      {module.code} &mdash; {module.name}
+            {apiModuleError && <p className="management-error">{apiModuleError}</p>}
+            {apiModuleLoading ? (
+              <p style={{ color: '#6b7280', marginTop: '0.75rem' }}>Loading modules…</p>
+            ) : (
+              <>
+                {filteredForTab.map((module) => (
+                  <div
+                    key={module.id}
+                    className="mymodule-course-card"
+                    onClick={() => navigate(`/modules/${module.id}`)}
+                  >
+                    <div className="mymodule-course-main">
+                      <div className="mymodule-course-logo">HM</div>
+                      <div className="mymodule-course-text">
+                        <div className="mymodule-course-name">
+                          {module.code || module.name} &mdash; {module.name}
+                        </div>
+                        <div className="mymodule-course-meta">
+                          <span>Documents</span>
+                          <span>Videos</span>
+                          <span>Quiz</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="mymodule-course-meta">
-                      <span>4 chapters</span>
-                      <span>12 videos</span>
-                      <span>20 questions</span>
+                    <div className="mymodule-course-status">
+                      <span className="mymodule-status-badge start">Open</span>
                     </div>
                   </div>
-                </div>
-
-                <div className="mymodule-course-status">
-                  <div className="mymodule-progress">
-                    <div className="mymodule-progress-bar">
-                      <div
-                        className="mymodule-progress-fill"
-                        style={{ width: `${module.progress}%` }}
-                      />
-                    </div>
-                    <span className="mymodule-progress-percent">{module.progress}%</span>
-                  </div>
-                  <span className={`mymodule-status-badge ${module.status.toLowerCase()}`}>
-                    {module.status}
-                  </span>
-                </div>
-              </div>
-            ))}
-
-            {filteredModules.length === 0 && (
-              <p style={{ color: '#6b7280', marginTop: '0.75rem' }}>
-                No modules found for this filter.
-              </p>
+                ))}
+                {filteredForTab.length === 0 && !apiModuleLoading && (
+                  <p style={{ color: '#6b7280', marginTop: '0.75rem' }}>No modules found for this filter.</p>
+                )}
+                <Pagination currentPage={currentPage} lastPage={lastPage} onPageChange={setApiModulePage} total={total} from={from} to={to} />
+              </>
             )}
           </div>
         </div>
@@ -116,10 +162,13 @@ const Dashboard = () => {
     }
 
     if (activeMenu === 'home' && userData) {
-      const total = modules.length;
-      const completed = modules.filter((m) => m.progress >= 100).length;
-      const inProgress = modules.filter((m) => m.progress > 0 && m.progress < 100).length;
-      const notStarted = total - completed - inProgress;
+      const total = apiModuleMeta.total;
+      const completed = apiModules.filter((m) => (m.progress ?? 0) >= 100).length;
+      const inProgress = apiModules.filter((m) => {
+        const p = m.progress ?? 0;
+        return p > 0 && p < 100;
+      }).length;
+      const notStarted = apiModules.filter((m) => (m.progress ?? 0) === 0).length;
 
       return (
         <div className="dashboard-content">
@@ -143,34 +192,38 @@ const Dashboard = () => {
           </div>
           <div className="home-modules-section">
             <h3 className="home-modules-title">Your modules</h3>
-            <div className="management-table-wrap">
-              <table className="management-table home-modules-table">
-                <thead>
-                  <tr>
-                    <th>Module code</th>
-                    <th>Module name</th>
-                    <th>Status</th>
-                    <th>Progress</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {modules.map((m) => (
-                    <tr key={m.code}>
-                      <td>{m.code}</td>
-                      <td>{m.name}</td>
-                      <td>
-                        <span className={`mymodule-status-badge ${(m.status || '').toLowerCase()}`}>
-                          {m.status || '—'}
-                        </span>
-                      </td>
-                      <td>{m.progress ?? 0}%</td>
+            {apiModuleLoading ? (
+              <p className="management-empty">Loading modules…</p>
+            ) : (
+              <div className="management-table-wrap">
+                <table className="management-table home-modules-table">
+                  <thead>
+                    <tr>
+                      <th>Module code</th>
+                      <th>Module name</th>
+                      <th>Status</th>
+                      <th>Progress</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {modules.length === 0 && (
-              <p className="management-empty">No modules selected yet. Go to MyModule to see available modules.</p>
+                  </thead>
+                  <tbody>
+                    {apiModules.map((m) => (
+                      <tr key={m.id}>
+                        <td>{m.code ?? '—'}</td>
+                        <td>{m.name ?? '—'}</td>
+                        <td>
+                          <span className={`mymodule-status-badge ${(m.status || '').toLowerCase()}`}>
+                            {m.status ?? '—'}
+                          </span>
+                        </td>
+                        <td>{m.progress ?? 0}%</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {apiModules.length === 0 && (
+                  <p className="management-empty">No modules found. Data is loaded from the API.</p>
+                )}
+              </div>
             )}
           </div>
         </div>

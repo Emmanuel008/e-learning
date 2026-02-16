@@ -3,12 +3,9 @@ import Home from './Home/Home';
 import Register from './Register/Register';
 import Login from './Login/Login';
 import Dashboard from './Dashboard/Dashboard';
-import InnovationManagementModule from './Modules/InnovationManagementModule';
-import IpManagementModule from './Modules/IpManagementModule';
-import ResearchCommercializationModule from './Modules/ResearchCommercializationModule';
-import FundraisingModule from './Modules/FundraisingModule';
-import ModuleChapterDetailPage from './Modules/ModuleChapterDetailPage';
-import ModuleQuizPage from './Modules/ModuleQuizPage';
+import ModuleDetailSwitch from './Modules/ModuleDetailSwitch';
+import ModuleMaterialsPage from './Modules/ModuleMaterialsPage';
+import ModuleQuizListPage from './Modules/ModuleQuizListPage';
 import './App.css';
 
 function App() {
@@ -20,12 +17,10 @@ function App() {
           <Route path="/register" element={<Register />} />
           <Route path="/login" element={<Login />} />
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/modules/hmu08001" element={<InnovationManagementModule />} />
-          <Route path="/modules/hmu08002" element={<IpManagementModule />} />
-          <Route path="/modules/hmu08003" element={<ResearchCommercializationModule />} />
-          <Route path="/modules/hmu08004" element={<FundraisingModule />} />
-          <Route path="/modules/:moduleCode/chapter/:chapterId" element={<ModuleChapterDetailPage />} />
-          <Route path="/modules/:moduleCode/quiz/:chapterId" element={<ModuleQuizPage />} />
+          <Route path="/modules/:moduleId/documents" element={<ModuleMaterialsPage type="document" />} />
+          <Route path="/modules/:moduleId/videos" element={<ModuleMaterialsPage type="media" />} />
+          <Route path="/modules/:moduleId/quiz" element={<ModuleQuizListPage />} />
+          <Route path="/modules/:moduleId" element={<ModuleDetailSwitch />} />
         </Routes>
       </div>
     </Router>
