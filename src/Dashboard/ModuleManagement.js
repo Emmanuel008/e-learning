@@ -400,7 +400,7 @@ const ModuleManagement = () => {
     try {
       const isEdit = modalType === 'module' && modalMode === 'edit' && editingItem != null;
       const body = {
-        form_method: 'save',
+        form_method: isEdit ? 'update' : 'save',
         name: formModule.name.trim(),
         description: formModule.description.trim(),
         code: formModule.code.trim()
@@ -447,7 +447,7 @@ const ModuleManagement = () => {
     }
     setCertificateSaving(true);
     try {
-      const body = { form_method: 'save', user_id: userId };
+      const body = { form_method: isEdit ? 'update' : 'save', user_id: userId };
       if (file) {
         body.certificate = await readFileAsDataUrl(file);
       }
@@ -491,7 +491,7 @@ const ModuleManagement = () => {
     try {
       const isEdit = modalType === 'learning-material' && modalMode === 'edit' && editingItem != null;
       const body = {
-        form_method: 'save',
+        form_method: isEdit ? 'update' : 'save',
         module_id: moduleId,
         title: formMaterial.title.trim(),
         description: formMaterial.description.trim(),
@@ -558,7 +558,7 @@ const ModuleManagement = () => {
     try {
       const isEdit = modalType === 'quiz' && modalMode === 'edit' && editingItem != null;
       const body = {
-        form_method: 'save',
+        form_method: isEdit ? 'update' : 'save',
         module_id: moduleId,
         name: (formQuiz.name || formQuiz.question || '').trim() || 'Quiz',
         question: formQuiz.question.trim(),
@@ -699,7 +699,7 @@ const ModuleManagement = () => {
 
     if (modalType === 'module') {
       return (
-        <Modal title={modalMode === 'add' ? 'Add Module' : 'Edit Module'} show={modalOpen} onClose={closeModal}>
+        <Modal title={modalMode === 'add' ? 'Add Module' : 'Update Module'} show={modalOpen} onClose={closeModal}>
           <form className="modal-form" onSubmit={handleSaveModule}>
             <div className="form-row">
               <label>Name</label>
@@ -728,7 +728,7 @@ const ModuleManagement = () => {
       const uploadLabel = isDocument ? 'Upload document (optional)' : 'Upload video (optional)';
 
       return (
-        <Modal title={modalMode === 'add' ? 'Add Learning Material' : 'Edit Learning Material'} show={modalOpen} onClose={closeModal}>
+        <Modal title={modalMode === 'add' ? 'Add Learning Material' : 'Update Learning Material'} show={modalOpen} onClose={closeModal}>
           <form className="modal-form" onSubmit={handleSaveMaterial}>
             <div className="form-row">
               <label>Module</label>
@@ -791,7 +791,7 @@ const ModuleManagement = () => {
 
     if (modalType === 'quiz') {
       return (
-        <Modal title={modalMode === 'add' ? 'Add Quiz' : 'Edit Quiz'} show={modalOpen} onClose={closeModal}>
+        <Modal title={modalMode === 'add' ? 'Add Quiz' : 'Update Quiz'} show={modalOpen} onClose={closeModal}>
           <form className="modal-form" onSubmit={handleSaveQuiz}>
             <div className="form-row">
               <label>Module</label>
@@ -841,7 +841,7 @@ const ModuleManagement = () => {
 
     if (modalType === 'certificate') {
       return (
-        <Modal title={modalMode === 'add' ? 'Add Certificate' : 'Edit Certificate'} show={modalOpen} onClose={closeModal}>
+        <Modal title={modalMode === 'add' ? 'Add Certificate' : 'Update Certificate'} show={modalOpen} onClose={closeModal}>
           <form className="modal-form" onSubmit={handleSaveCertificate}>
             <div className="form-row">
               <label>User</label>
@@ -919,7 +919,7 @@ const ModuleManagement = () => {
                       <td>{row.code}</td>
                       <td className="management-td-actions">
                         <button type="button" className="management-btn management-btn-view" onClick={() => openView('module', row)}>View</button>
-                        <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('module', row)}>Edit</button>
+                        <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('module', row)}>Update</button>
                         <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Module', row, modules, setModules)}>Delete</button>
                       </td>
                     </tr>
@@ -976,7 +976,7 @@ const ModuleManagement = () => {
                       </td>
                       <td className="management-td-actions">
                         <button type="button" className="management-btn management-btn-view" onClick={() => openView('learning-material', row)}>View</button>
-                        <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('learning-material', row)}>Edit</button>
+                        <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('learning-material', row)}>Update</button>
                         <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Learning Material', row, materials, setMaterials)}>Delete</button>
                       </td>
                     </tr>
@@ -1031,7 +1031,7 @@ const ModuleManagement = () => {
                         <td>{correctDisplay}</td>
                         <td className="management-td-actions">
                           <button type="button" className="management-btn management-btn-view" onClick={() => openView('quiz', row)}>View</button>
-                          <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('quiz', row)}>Edit</button>
+                          <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('quiz', row)}>Update</button>
                           <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Quiz', row, quizzes, setQuizzes)}>Delete</button>
                         </td>
                       </tr>
@@ -1085,7 +1085,7 @@ const ModuleManagement = () => {
                       </td>
                       <td className="management-td-actions">
                         <button type="button" className="management-btn management-btn-view" onClick={() => openView('certificate', row)}>View</button>
-                        <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('certificate', row)}>Edit</button>
+                        <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('certificate', row)}>Update</button>
                         <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Certificate', row, certificates, setCertificates)}>Delete</button>
                       </td>
                     </tr>
