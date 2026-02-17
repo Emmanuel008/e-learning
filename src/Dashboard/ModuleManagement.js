@@ -2,8 +2,19 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Swal from 'sweetalert2';
 import Modal from '../components/Modal';
 import Pagination from '../components/Pagination';
-import { moduleApi, learningMaterialApi, quizApi, certificateApi, users as usersApi } from '../api/api';
+import { moduleApi, learningMaterialApi, quizApi, certificateApi, assignmentApi, users as usersApi } from '../api/api';
+import { BASE_URL } from '../api/apiClient';
 import './Dashboard.css';
+
+/** Build assignment document URL: support multiple API keys and relative paths. */
+function getAssignmentDocumentUrl(row) {
+  const raw = row?.path ?? row?.document ?? row?.document_path ?? row?.file_url ?? row?.file_path ?? row?.url ?? row?.storage_path ?? (row?.document && typeof row.document === 'object' ? row.document.url : null);
+  if (!raw || typeof raw !== 'string') return '';
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+  const siteRoot = BASE_URL.replace(/\/api\/?$/, '');
+  if (raw.startsWith('/')) return siteRoot + raw;
+  return siteRoot + '/' + raw;
+}
 
 const swalConfirm = (options) => Swal.fire({ confirmButtonColor: '#2563eb', ...options });
 const swalSuccess = (title, text) => swalConfirm({ icon: 'success', title, text });
@@ -15,7 +26,8 @@ const MODULE_MANAGEMENT_TABS = [
   { id: 'module', label: 'Module' },
   { id: 'learning-material', label: 'Learning Material' },
   { id: 'quiz', label: 'Quiz' },
-  { id: 'certificate', label: 'Certificate' }
+  { id: 'certificate', label: 'Certificate' },
+  { id: 'assignment', label: 'Assignment' }
 ];
 
 const MATERIAL_TYPES = [
@@ -26,6 +38,7 @@ const MATERIAL_TYPES = [
 const MATERIAL_PER_PAGE = 5;
 const QUIZ_PER_PAGE = 5;
 const CERTIFICATE_PER_PAGE = 5;
+const ASSIGNMENT_PER_PAGE = 5;
 
 
 /** Normalize pagination meta from API (handles list_of_item.meta, returnData.pagination, or top-level; computes last_page from total/per_page if missing). */
@@ -90,11 +103,17 @@ const ModuleManagement = () => {
   const [certificatePage, setCertificatePage] = useState(1);
   const [certificateMeta, setCertificateMeta] = useState({ current_page: 1, last_page: 1, total: 0, per_page: CERTIFICATE_PER_PAGE });
   const [certificateSaving, setCertificateSaving] = useState(false);
-  const [userOptions, setUserOptions] = useState([]); // for Certificate user dropdown
+  const [userOptions, setUserOptions] = useState([]); // for Certificate & Assignment user dropdown
+  const [assignments, setAssignments] = useState([]);
+  const [assignmentLoading, setAssignmentLoading] = useState(true);
+  const [assignmentError, setAssignmentError] = useState(null);
+  const [assignmentPage, setAssignmentPage] = useState(1);
+  const [assignmentMeta, setAssignmentMeta] = useState({ current_page: 1, last_page: 1, total: 0, per_page: ASSIGNMENT_PER_PAGE });
+  const [assignmentSaving, setAssignmentSaving] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState(null); // 'view' | 'add' | 'edit'
-  const [modalType, setModalType] = useState(null); // 'module' | 'learning-material' | 'quiz' | 'certificate'
+  const [modalType, setModalType] = useState(null); // 'module' | 'learning-material' | 'quiz' | 'certificate' | 'assignment'
   const [editingItem, setEditingItem] = useState(null);
   const [moduleSaving, setModuleSaving] = useState(false);
 
@@ -102,6 +121,7 @@ const ModuleManagement = () => {
   const [formMaterial, setFormMaterial] = useState({ module_id: '', title: '', description: '', type: 'document', fileName: '' });
   const [formQuiz, setFormQuiz] = useState({ module_id: '', name: '', question: '', options: ['', ''], correctAnswerIndex: 0 });
   const [formCertificate, setFormCertificate] = useState({ user_id: '', fileName: '', file: null });
+  const [formAssignment, setFormAssignment] = useState({ title: '', description: '', assigned_user_id: '', fileName: '', file: null });
 
   const openView = (type, item) => {
     setModalType(type);
@@ -118,6 +138,7 @@ const ModuleManagement = () => {
     if (type === 'learning-material') setFormMaterial({ module_id: moduleOptions[0]?.id ?? '', title: '', description: '', type: 'document', fileName: '' });
     if (type === 'quiz') setFormQuiz({ module_id: moduleOptions[0]?.id ?? '', name: '', question: '', options: ['', ''], correctAnswerIndex: 0 });
     if (type === 'certificate') setFormCertificate({ user_id: userOptions[0]?.id ?? '', fileName: '', file: null });
+    if (type === 'assignment') setFormAssignment({ title: '', description: '', assigned_user_id: userOptions[0]?.id ?? '', fileName: '', file: null });
     setModalOpen(true);
   };
 
@@ -152,6 +173,15 @@ const ModuleManagement = () => {
     }
     if (type === 'certificate') {
       setFormCertificate({ user_id: item.user_id ?? '', fileName: item.path ? 'Uploaded file' : '', file: null });
+    }
+    if (type === 'assignment') {
+      setFormAssignment({
+        title: item.title || '',
+        description: item.description || '',
+        assigned_user_id: item.assigned_user_id ?? '',
+        fileName: item.document || item.path ? 'Uploaded file' : '',
+        file: null
+      });
     }
     setModalOpen(true);
   };
@@ -291,6 +321,28 @@ const ModuleManagement = () => {
     }
   }, []);
 
+  const fetchAssignments = useCallback(async (pageNum = 1) => {
+    setAssignmentLoading(true);
+    setAssignmentError(null);
+    try {
+      const { data } = await assignmentApi.ilist({ page: pageNum, per_page: ASSIGNMENT_PER_PAGE });
+      const ok = data?.status === 'OK';
+      if (ok) {
+        setAssignments(getListFromResponse(data));
+        setAssignmentMeta(getPaginatedMeta(data, ASSIGNMENT_PER_PAGE));
+        setAssignmentError(null);
+      } else {
+        setAssignments([]);
+        setAssignmentError(data?.errorMessage || 'Failed to load assignments');
+      }
+    } catch (err) {
+      setAssignments([]);
+      setAssignmentError(err.response?.data?.errorMessage || err.message || 'Failed to load assignments');
+    } finally {
+      setAssignmentLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (activeTab === 'certificate') {
       fetchCertificates(certificatePage);
@@ -298,11 +350,19 @@ const ModuleManagement = () => {
     }
   }, [activeTab, certificatePage, fetchCertificates, fetchUserOptions]);
 
+  useEffect(() => {
+    if (activeTab === 'assignment') {
+      fetchAssignments(assignmentPage);
+      fetchUserOptions();
+    }
+  }, [activeTab, assignmentPage, fetchAssignments, fetchUserOptions]);
+
   const getDeleteLabel = (type, item) => {
     if (type === 'Module') return item.name || item.code || 'this module';
     if (type === 'Learning Material') return item.title || 'this item';
     if (type === 'Quiz') return item.question || item.title || 'this item';
     if (type === 'Certificate') return item.username || item.email || 'this certificate';
+    if (type === 'Assignment') return item.title || 'this assignment';
     return item.title || item.name || 'this item';
   };
 
@@ -390,6 +450,24 @@ const ModuleManagement = () => {
       }
       return;
     }
+    if (type === 'Assignment') {
+      try {
+        const { data } = await assignmentApi.iformAction({ form_method: 'delete', id: item.id });
+        const ok = data?.status === 'OK';
+        const msg = Array.isArray(data?.errorMessage) ? data.errorMessage[0] : data?.errorMessage;
+        if (ok) {
+          await swalSuccess('Deleted', msg || 'Assignment has been deleted.');
+          fetchAssignments(assignmentMeta.current_page);
+        } else {
+          await swalError('Delete failed', msg || 'Could not delete assignment.');
+        }
+      } catch (err) {
+        const msg = err.response?.data?.errorMessage;
+        const text = Array.isArray(msg) ? msg[0] : msg || err.message || 'Could not delete assignment.';
+        await swalError('Error', text);
+      }
+      return;
+    }
     setList(list.filter((i) => i.id !== item.id));
     await swalSuccess('Deleted!', 'The item has been deleted.');
   };
@@ -468,6 +546,55 @@ const ModuleManagement = () => {
       await swalError('Error', text);
     } finally {
       setCertificateSaving(false);
+    }
+  };
+
+  const handleAssignmentFileChange = (e) => {
+    const file = e.target.files?.[0];
+    setFormAssignment((p) => ({ ...p, fileName: file ? file.name : '', file: file || null }));
+  };
+
+  const handleSaveAssignment = async (e) => {
+    e.preventDefault();
+    const assignedUserId = formAssignment.assigned_user_id === '' ? null : Number(formAssignment.assigned_user_id);
+    if (assignedUserId == null) {
+      await swalError('Validation', 'Please select an assigned user.');
+      return;
+    }
+    const isEdit = modalType === 'assignment' && modalMode === 'edit' && editingItem != null;
+    const file = formAssignment.file;
+    if (!file && !isEdit) {
+      await swalError('Validation', 'Please select a document to upload.');
+      return;
+    }
+    setAssignmentSaving(true);
+    try {
+      const body = {
+        form_method: isEdit ? 'update' : 'save',
+        title: formAssignment.title.trim(),
+        description: formAssignment.description.trim(),
+        assigned_user_id: assignedUserId
+      };
+      if (file) {
+        body.document = await readFileAsDataUrl(file);
+      }
+      if (isEdit && editingItem.id != null) body.id = Number(editingItem.id);
+      const { data } = await assignmentApi.iformAction(body);
+      const ok = data?.status === 'OK';
+      const msg = Array.isArray(data?.errorMessage) ? data.errorMessage[0] : data?.errorMessage;
+      if (ok) {
+        closeModal();
+        await swalSuccess(modalMode === 'add' ? 'Assignment added!' : 'Assignment updated!', msg || (modalMode === 'add' ? 'The assignment has been added.' : 'The assignment has been updated.'));
+        fetchAssignments(assignmentMeta.current_page);
+      } else {
+        await swalError('Save failed', msg || 'Could not save assignment.');
+      }
+    } catch (err) {
+      const msg = err.response?.data?.errorMessage;
+      const text = Array.isArray(msg) ? msg[0] : msg || err.message || 'Could not save assignment.';
+      await swalError('Error', text);
+    } finally {
+      setAssignmentSaving(false);
     }
   };
 
@@ -593,7 +720,8 @@ const ModuleManagement = () => {
         module: 'View Module',
         'learning-material': 'View Learning Material',
         quiz: 'View Quiz',
-        certificate: 'View Certificate'
+        certificate: 'View Certificate',
+        assignment: 'View Assignment'
       };
       const title = viewTitles[modalType] || 'View';
 
@@ -688,6 +816,32 @@ const ModuleManagement = () => {
             <table className="modal-view-table">
               <tbody>
                 {quizRows.map(([label, value], i) => (
+                  <tr key={i}><th>{label}</th><td>{value}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          </Modal>
+        );
+      }
+
+      if (modalType === 'assignment') {
+        const viewAssignedUser = userOptions.find((u) => Number(u.id) === Number(editingItem.assigned_user_id));
+        const viewAssignedUserName = viewAssignedUser ? (viewAssignedUser.name || viewAssignedUser.email) : (editingItem.assigned_username || editingItem.username || editingItem.email || '—');
+        const viewDocUrl = getAssignmentDocumentUrl(editingItem);
+        const docCell = viewDocUrl ? (
+          <a href={viewDocUrl} target="_blank" rel="noopener noreferrer">View document</a>
+        ) : '—';
+        const rows = [
+          ['Title', editingItem.title || '—'],
+          ['Description', editingItem.description || '—'],
+          ['Assigned user', viewAssignedUserName],
+          ['Document', docCell]
+        ];
+        return (
+          <Modal title={title} show={modalOpen} onClose={closeModal}>
+            <table className="modal-view-table">
+              <tbody>
+                {rows.map(([label, value], i) => (
                   <tr key={i}><th>{label}</th><td>{value}</td></tr>
                 ))}
               </tbody>
@@ -875,6 +1029,56 @@ const ModuleManagement = () => {
             <div className="modal-form-actions">
               <button type="button" className="modal-btn modal-btn-secondary" onClick={closeModal} disabled={certificateSaving}>Cancel</button>
               <button type="submit" className="modal-btn modal-btn-primary" disabled={certificateSaving}>{certificateSaving ? 'Saving…' : 'Save'}</button>
+            </div>
+          </form>
+        </Modal>
+      );
+    }
+
+    if (modalType === 'assignment') {
+      return (
+        <Modal title={modalMode === 'add' ? 'Add Assignment' : 'Update Assignment'} show={modalOpen} onClose={closeModal}>
+          <form className="modal-form" onSubmit={handleSaveAssignment}>
+            <div className="form-row">
+              <label>Title</label>
+              <input type="text" value={formAssignment.title} onChange={(e) => setFormAssignment((p) => ({ ...p, title: e.target.value }))} required disabled={assignmentSaving} />
+            </div>
+            <div className="form-row form-row-textarea">
+              <label>Description</label>
+              <textarea value={formAssignment.description} onChange={(e) => setFormAssignment((p) => ({ ...p, description: e.target.value }))} rows={3} className="modal-form-textarea" disabled={assignmentSaving} />
+            </div>
+            <div className="form-row">
+              <label>Assigned user</label>
+              <select
+                value={formAssignment.assigned_user_id}
+                onChange={(e) => setFormAssignment((p) => ({ ...p, assigned_user_id: e.target.value }))}
+                required
+                disabled={assignmentSaving}
+              >
+                <option value="">Select user</option>
+                {userOptions.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name} – {u.email}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-row">
+              <label>Document upload {modalMode === 'edit' && '(leave empty to keep current)'}</label>
+              <div className="modal-form-file-wrap">
+                <input
+                  type="file"
+                  accept=".pdf,.doc,.docx,image/*"
+                  onChange={handleAssignmentFileChange}
+                  className="modal-form-file"
+                  id="assignment-upload"
+                />
+                <label htmlFor="assignment-upload" className="modal-form-file-label">
+                  {formAssignment.fileName || 'Choose file...'}
+                </label>
+              </div>
+            </div>
+            <div className="modal-form-actions">
+              <button type="button" className="modal-btn modal-btn-secondary" onClick={closeModal} disabled={assignmentSaving}>Cancel</button>
+              <button type="submit" className="modal-btn modal-btn-primary" disabled={assignmentSaving}>{assignmentSaving ? 'Saving…' : 'Save'}</button>
             </div>
           </form>
         </Modal>
@@ -1080,7 +1284,7 @@ const ModuleManagement = () => {
                       <td>{row.email || '—'}</td>
                       <td>
                         {row.path ? (
-                          <a href={row.path} target="_blank" rel="noopener noreferrer">View</a>
+                          <a href={row.path} target="_blank" rel="noopener noreferrer" className="management-doc-link">View</a>
                         ) : '—'}
                       </td>
                       <td className="management-td-actions">
@@ -1094,6 +1298,66 @@ const ModuleManagement = () => {
               </table>
               {certificates.length === 0 && <p className="management-empty">No certificates yet. Add one to get started.</p>}
               <Pagination currentPage={currentPage} lastPage={lastPage} onPageChange={setCertificatePage} total={total} from={from} to={to} />
+            </>
+          )}
+        </div>
+      );
+    }
+
+    if (activeTab === 'assignment') {
+      const total = assignmentMeta.total;
+      const currentPage = assignmentMeta.current_page;
+      const perPage = assignmentMeta.per_page;
+      const lastPage = Math.max(assignmentMeta.last_page, perPage > 0 && total > 0 ? Math.ceil(total / perPage) : 1);
+      const from = total > 0 ? (currentPage - 1) * perPage + 1 : 0;
+      const to = Math.min(currentPage * perPage, total);
+      return (
+        <div className="management-table-wrap">
+          <div className="management-toolbar">
+            <button type="button" className="action-btn" onClick={() => openAdd('assignment')}>+ Add Assignment</button>
+          </div>
+          {assignmentError && <p className="management-error">{assignmentError}</p>}
+          {assignmentLoading ? (
+            <p className="management-loading">Loading assignments…</p>
+          ) : (
+            <>
+              <table className="management-table">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Description</th>
+                    <th>Assigned user</th>
+                    <th>Document</th>
+                    <th className="management-th-actions">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {assignments.map((row) => {
+                    const assignedUser = userOptions.find((u) => Number(u.id) === Number(row.assigned_user_id));
+                    const assignedUserName = assignedUser ? (assignedUser.name || assignedUser.email) : (row.assigned_username || row.username || row.email || '—');
+                    const documentUrl = getAssignmentDocumentUrl(row);
+                    return (
+                    <tr key={row.id}>
+                      <td>{row.title}</td>
+                      <td className="management-td-desc">{row.description || '—'}</td>
+                      <td>{assignedUserName}</td>
+                      <td>
+                        {documentUrl ? (
+                          <a href={documentUrl} target="_blank" rel="noopener noreferrer" className="management-doc-link">View</a>
+                        ) : '—'}
+                      </td>
+                      <td className="management-td-actions">
+                        <button type="button" className="management-btn management-btn-view" onClick={() => openView('assignment', row)}>View</button>
+                        <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('assignment', row)}>Update</button>
+                        <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Assignment', row, assignments, setAssignments)}>Delete</button>
+                      </td>
+                    </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {assignments.length === 0 && <p className="management-empty">No assignments yet. Add one to get started.</p>}
+              <Pagination currentPage={currentPage} lastPage={lastPage} onPageChange={setAssignmentPage} total={total} from={from} to={to} />
             </>
           )}
         </div>

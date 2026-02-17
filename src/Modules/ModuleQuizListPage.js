@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import DashboardShell from '../Dashboard/DashboardShell';
 import Pagination from '../components/Pagination';
-import { moduleApi, quizApi } from '../api/api';
+import { moduleApi, quizApi, quizAnswerApi } from '../api/api';
+import { getUserData } from '../Dashboard/dashboardService';
 import './ModuleDetail.css';
 
 const PER_PAGE = 10;
@@ -41,6 +42,12 @@ const ModuleQuizListPage = () => {
   const [page, setPage] = useState(1);
   const [meta, setMeta] = useState({ current_page: 1, last_page: 1, total: 0, per_page: PER_PAGE });
   const [selectedAnswers, setSelectedAnswers] = useState({});
+  const [submitting, setSubmitting] = useState(false);
+  const [submitMessage, setSubmitMessage] = useState(null);
+  const [resultsData, setResultsData] = useState(null);
+  const [resultsLoading, setResultsLoading] = useState(false);
+  const [resultsError, setResultsError] = useState(null);
+  const resultsRef = useRef(null);
 
   const id = Number(moduleId);
 
@@ -132,6 +139,112 @@ const ModuleQuizListPage = () => {
 
   const handleAnswerChange = (questionId, optionValue) => {
     setSelectedAnswers((prev) => ({ ...prev, [questionId]: optionValue }));
+    setSubmitMessage(null);
+  };
+
+  const handleSubmitAnswers = async () => {
+    const user = getUserData();
+    if (!user?.id) {
+      setSubmitMessage({ type: 'error', text: 'Please log in to submit answers.' });
+      return;
+    }
+    const answers = Object.entries(selectedAnswers)
+      .filter(([, answer]) => answer != null && answer !== '')
+      .map(([questionId, answer]) => ({ question_id: Number(questionId), answer: String(answer) }));
+    if (answers.length === 0) {
+      setSubmitMessage({ type: 'error', text: 'Please select at least one answer.' });
+      return;
+    }
+    setSubmitting(true);
+    setSubmitMessage(null);
+    try {
+      const { data } = await quizAnswerApi.iformAction({
+        form_method: 'save',
+        user_id: Number(user.id),
+        answers
+      });
+      if (data?.status === 'OK') {
+        setSubmitMessage({ type: 'success', text: data?.errorMessage || 'Answers submitted successfully.' });
+        fetchResults();
+      } else {
+        setSubmitMessage({ type: 'error', text: data?.errorMessage || 'Failed to submit answers.' });
+      }
+    } catch (err) {
+      const msg = err.response?.data?.errorMessage ?? err.message ?? 'Failed to submit answers.';
+      setSubmitMessage({ type: 'error', text: Array.isArray(msg) ? msg[0] : msg });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const fetchResults = useCallback(async () => {
+    if (!id) return;
+    setResultsLoading(true);
+    setResultsError(null);
+    setResultsData(null);
+    try {
+      const { data } = await quizAnswerApi.iresults({ module_id: id });
+      if (data?.status === 'OK') {
+        const payload = data?.returnData ?? data;
+        setResultsData(payload);
+        setResultsError(null);
+        setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+      } else {
+        setResultsData(null);
+        setResultsError(data?.errorMessage || 'No results found.');
+      }
+    } catch (err) {
+      setResultsData(null);
+      setResultsError(err.response?.data?.errorMessage ?? err.message ?? 'Failed to load results.');
+    } finally {
+      setResultsLoading(false);
+    }
+  }, [id]);
+
+  const handleViewResults = () => {
+    fetchResults();
+  };
+
+  const renderResults = () => {
+    if (resultsLoading) return <p className="module-detail-empty">Loading results…</p>;
+    if (resultsError && !resultsData) return <p className="management-error">{resultsError}</p>;
+    if (!resultsData) return null;
+    const rd = resultsData;
+    const list = Array.isArray(rd) ? rd : (rd.results ?? rd.answers ?? rd.list ?? rd.data ?? (rd.list_of_item?.data ?? rd.list_of_item) ?? []);
+    const score = rd.score ?? rd.total_score ?? rd.marks;
+    const total = rd.total ?? rd.total_questions ?? rd.total_marks;
+    return (
+      <div className="module-quiz-results">
+        <h3 className="module-quiz-results-title">My results</h3>
+        {(score != null || total != null) && (
+          <p className="module-quiz-results-score">
+            Score: {score != null ? score : '—'} {total != null ? ` / ${total}` : ''}
+          </p>
+        )}
+        {Array.isArray(list) && list.length > 0 ? (
+          <ul className="module-quiz-results-list">
+            {list.map((item, idx) => (
+              <li key={item.question_id ?? item.id ?? idx} className="module-quiz-results-item">
+                <span className="module-quiz-results-q">{item.question_text ?? item.question ?? item.text ?? `Q${idx + 1}`}</span>
+                <span className="module-quiz-results-answer">
+                  Your answer: {item.your_answer ?? item.answer ?? item.user_answer ?? '—'}
+                  {item.correct_answer != null && (
+                    <> · Correct: {item.correct_answer}</>
+                  )}
+                  {item.is_correct != null && (
+                    <span className={item.is_correct ? 'module-quiz-results-correct' : 'module-quiz-results-incorrect'}>
+                      {item.is_correct ? ' ✓' : ' ✗'}
+                    </span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="module-detail-empty">No results to display yet. Submit your answers first.</p>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -194,6 +307,26 @@ const ModuleQuizListPage = () => {
                 {questions.length === 0 && !loading && (
                   <p className="module-detail-empty">No quiz questions in this module.</p>
                 )}
+                {submitMessage && (
+                  <p className={submitMessage.type === 'success' ? 'module-quiz-success' : 'management-error'} style={{ marginTop: '1rem' }}>
+                    {submitMessage.text}
+                  </p>
+                )}
+                {questions.length > 0 && (
+                  <div className="module-quiz-submit-wrap">
+                    <button type="button" className="module-quiz-submit-btn" onClick={handleSubmitAnswers} disabled={submitting}>
+                      {submitting ? 'Submitting…' : 'Submit answers'}
+                    </button>
+                    <button type="button" className="module-quiz-results-btn" onClick={handleViewResults} disabled={resultsLoading}>
+                      {resultsLoading ? 'Loading…' : 'View my results'}
+                    </button>
+                  </div>
+                )}
+                {(resultsLoading || resultsData != null || resultsError) ? (
+                  <div className="module-quiz-results-wrap" ref={resultsRef}>
+                    {renderResults()}
+                  </div>
+                ) : null}
                 <Pagination currentPage={currentPage} lastPage={lastPage} onPageChange={setPage} total={total} from={from} to={to} />
               </>
             )}

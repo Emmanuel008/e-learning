@@ -100,15 +100,8 @@ const DashboardShell = ({ activeMenuId = 'home', children }) => {
       <header className="dashboard-header">
         <div className="header-content">
           <div className="logo-section">
-            <div className="logo-icon">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" fill="#10b981" />
-                <path d="M9 12l2 2 4-4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </div>
-            <div className="logo-text">
-              <div className="logo-title">E-Learning Platform</div>
-            </div>
+            <img src={process.env.PUBLIC_URL + '/BUNI.png'} alt="BUNI" className="dashboard-logo-img" />
+            <span className="dashboard-logo-lms">LMS</span>
           </div>
           <div className="user-section">
             <div className="user-profile" onClick={() => setShowUserDropdown(!showUserDropdown)}>

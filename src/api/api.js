@@ -83,6 +83,19 @@ export const quizApi = {
 };
 
 /**
+ * Quiz answer submit and results (requires auth token).
+ * save: { form_method: "save", user_id, answers: [{ question_id, answer }] }
+ * iresults: GET ?module_id=1 - get user's quiz results for a module
+ */
+export const quizAnswerApi = {
+  iformAction: (body) =>
+    apiClient.post('/quizAnswer/iformAction', body),
+
+  iresults: (params) =>
+    apiClient.get('/quizAnswer/iresults', { params })
+};
+
+/**
  * Certificate CRUD (requires auth token).
  * save: { form_method: "save", user_id, certificate: "data:application/pdf;base64,...", id? }
  * delete: { form_method: "delete", id }
@@ -98,5 +111,22 @@ export const certificateApi = {
     apiClient.post('/certificate/iformAction', body)
 };
 
-const api = { auth, users, moduleApi, learningMaterialApi, quizApi, certificateApi };
+/**
+ * Assignment CRUD (requires auth token).
+ * save: { form_method: "save", title, description, assigned_user_id, document?: "data:application/pdf;base64,...", id? }
+ * update: { form_method: "update", id, title, description, assigned_user_id, document? }
+ * delete: { form_method: "delete", id }
+ */
+export const assignmentApi = {
+  ilist: (params = {}) =>
+    apiClient.get('/assignment/ilist', { params: { paginate: true, per_page: 5, ...params } }),
+
+  iget: (id) =>
+    apiClient.get('/assignment/iget', { params: { id } }),
+
+  iformAction: (body) =>
+    apiClient.post('/assignment/iformAction', body)
+};
+
+const api = { auth, users, moduleApi, learningMaterialApi, quizApi, quizAnswerApi, certificateApi, assignmentApi };
 export default api;
