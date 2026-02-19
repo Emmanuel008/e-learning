@@ -184,6 +184,7 @@ const ModuleQuizListPage = () => {
     setResultsData(null);
     try {
       const { data } = await quizAnswerApi.iresults({ module_id: id });
+      console.log(data)
       if (data?.status === 'OK') {
         const payload = data?.returnData ?? data;
         setResultsData(payload);
@@ -209,10 +210,11 @@ const ModuleQuizListPage = () => {
     if (resultsLoading) return <p className="module-detail-empty">Loading results…</p>;
     if (resultsError && !resultsData) return <p className="management-error">{resultsError}</p>;
     if (!resultsData) return null;
+    console.log(resultsData)
     const rd = resultsData;
     const list = Array.isArray(rd) ? rd : (rd.results ?? rd.answers ?? rd.list ?? rd.data ?? (rd.list_of_item?.data ?? rd.list_of_item) ?? []);
-    const score = rd.score ?? rd.total_score ?? rd.marks;
-    const total = rd.total ?? rd.total_questions ?? rd.total_marks;
+    const score = rd.count_correct_answer;
+    const total = rd.total_questions;
     return (
       <div className="module-quiz-results">
         <h3 className="module-quiz-results-title">My results</h3>
