@@ -99,6 +99,7 @@ export const quizAnswerApi = {
  * Certificate CRUD (requires auth token).
  * save: { form_method: "save", user_id, certificate: "data:application/pdf;base64,...", id? }
  * delete: { form_method: "delete", id }
+ * ilist params: paginate, per_page, page, user_id (optional - filter by certificate owner)
  */
 export const certificateApi = {
   ilist: (params = {}) =>
@@ -116,6 +117,7 @@ export const certificateApi = {
  * save: { form_method: "save", title, description, assigned_user_id, document?: "data:application/pdf;base64,...", id? }
  * update: { form_method: "update", id, title, description, assigned_user_id, document? }
  * delete: { form_method: "delete", id }
+ * ilist params: paginate, per_page, page, assigned_user_id (optional - filter by assigned user)
  */
 export const assignmentApi = {
   ilist: (params = {}) =>

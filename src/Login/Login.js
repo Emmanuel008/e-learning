@@ -4,9 +4,11 @@ import Swal from 'sweetalert2';
 import Input from '../components/Input';
 import { loginUser } from './LoginServices';
 import { setUserData } from '../Dashboard/dashboardService';
+import { useAuth } from '../context/AuthContext';
 import './Login.css';
 
 const Login = () => {
+    const { setUser } = useAuth();
     const [formData, setFormData] = useState({
         email: '',
         password: ''
@@ -30,9 +32,9 @@ const Login = () => {
             const response = await loginUser(formData);
 
             if (response.success) {
-                // Store user data
                 if (response.data) {
                     setUserData(response.data);
+                    setUser(response.data);
                 }
                 await Swal.fire({
                     icon: 'success',

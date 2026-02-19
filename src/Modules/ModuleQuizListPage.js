@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import DashboardShell from '../Dashboard/DashboardShell';
 import Pagination from '../components/Pagination';
@@ -21,7 +21,7 @@ function getPaginatedMeta(data, perPage) {
   const listOfItem = returnData.list_of_item || returnData;
   const meta = listOfItem?.meta || returnData.meta || listOfItem || returnData || data;
   const total = Number(meta.total ?? meta.totalCount ?? returnData.total ?? 0) || 0;
-  const per = Number(meta.per_page ?? meta.perPage ?? perPage) || perPage;
+  const per = Number(meta.per_page ?? meta.perPage ?? returnData.per_page ?? perPage) || perPage;
   const current = Number(meta.current_page ?? meta.currentPage ?? 1) || 1;
   const last = meta.last_page ?? meta.lastPage ?? (per > 0 ? Math.max(1, Math.ceil(total / per)) : 1);
   return {
@@ -44,10 +44,7 @@ const ModuleQuizListPage = () => {
   const [selectedAnswers, setSelectedAnswers] = useState({});
   const [submitting, setSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState(null);
-  const [resultsData, setResultsData] = useState(null);
-  const [resultsLoading, setResultsLoading] = useState(false);
-  const [resultsError, setResultsError] = useState(null);
-  const resultsRef = useRef(null);
+  const [justSubmitted, setJustSubmitted] = useState(false);
 
   const id = Number(moduleId);
 
@@ -55,10 +52,10 @@ const ModuleQuizListPage = () => {
     if (!id) return;
     try {
       let mod = null;
-      let page = 1;
+      let pageNum = 1;
       const perPage = 5;
       while (true) {
-        const { data } = await moduleApi.ilist({ paginate: true, per_page: perPage, page });
+        const { data } = await moduleApi.ilist({ paginate: true, per_page: perPage, page: pageNum });
         if (data?.status !== 'OK') break;
         const list = getListFromResponse(data);
         const found = list.find((m) => Number(m.id) === id);
@@ -67,10 +64,10 @@ const ModuleQuizListPage = () => {
           break;
         }
         const rd = data?.returnData || {};
-        const meta = rd.list_of_item?.meta ?? rd.meta ?? rd;
-        const lastPage = meta?.last_page ?? rd?.last_page ?? 1;
-        if (page >= lastPage) break;
-        page += 1;
+        const metaInfo = rd.list_of_item?.meta ?? rd.meta ?? rd;
+        const lastPage = metaInfo?.last_page ?? rd?.last_page ?? 1;
+        if (pageNum >= lastPage) break;
+        pageNum += 1;
       }
       if (!mod) {
         const { data } = await moduleApi.iget(id);
@@ -164,8 +161,8 @@ const ModuleQuizListPage = () => {
         answers
       });
       if (data?.status === 'OK') {
-        setSubmitMessage({ type: 'success', text: data?.errorMessage || 'Answers submitted successfully.' });
-        fetchResults();
+        setSubmitMessage({ type: 'success', text: 'Successfully submit the quiz.' });
+        setJustSubmitted(true);
       } else {
         setSubmitMessage({ type: 'error', text: data?.errorMessage || 'Failed to submit answers.' });
       }
@@ -177,76 +174,8 @@ const ModuleQuizListPage = () => {
     }
   };
 
-  const fetchResults = useCallback(async () => {
-    if (!id) return;
-    setResultsLoading(true);
-    setResultsError(null);
-    setResultsData(null);
-    try {
-      const { data } = await quizAnswerApi.iresults({ module_id: id });
-      console.log(data)
-      if (data?.status === 'OK') {
-        const payload = data?.returnData ?? data;
-        setResultsData(payload);
-        setResultsError(null);
-        setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
-      } else {
-        setResultsData(null);
-        setResultsError(data?.errorMessage || 'No results found.');
-      }
-    } catch (err) {
-      setResultsData(null);
-      setResultsError(err.response?.data?.errorMessage ?? err.message ?? 'Failed to load results.');
-    } finally {
-      setResultsLoading(false);
-    }
-  }, [id]);
-
   const handleViewResults = () => {
-    fetchResults();
-  };
-
-  const renderResults = () => {
-    if (resultsLoading) return <p className="module-detail-empty">Loading results…</p>;
-    if (resultsError && !resultsData) return <p className="management-error">{resultsError}</p>;
-    if (!resultsData) return null;
-    console.log(resultsData)
-    const rd = resultsData;
-    const list = Array.isArray(rd) ? rd : (rd.results ?? rd.answers ?? rd.list ?? rd.data ?? (rd.list_of_item?.data ?? rd.list_of_item) ?? []);
-    const score = rd.count_correct_answer;
-    const total = rd.total_questions;
-    return (
-      <div className="module-quiz-results">
-        <h3 className="module-quiz-results-title">My results</h3>
-        {(score != null || total != null) && (
-          <p className="module-quiz-results-score">
-            Score: {score != null ? score : '—'} {total != null ? ` / ${total}` : ''}
-          </p>
-        )}
-        {Array.isArray(list) && list.length > 0 ? (
-          <ul className="module-quiz-results-list">
-            {list.map((item, idx) => (
-              <li key={item.question_id ?? item.id ?? idx} className="module-quiz-results-item">
-                <span className="module-quiz-results-q">{item.question_text ?? item.question ?? item.text ?? `Q${idx + 1}`}</span>
-                <span className="module-quiz-results-answer">
-                  Your answer: {item.your_answer ?? item.answer ?? item.user_answer ?? '—'}
-                  {item.correct_answer != null && (
-                    <> · Correct: {item.correct_answer}</>
-                  )}
-                  {item.is_correct != null && (
-                    <span className={item.is_correct ? 'module-quiz-results-correct' : 'module-quiz-results-incorrect'}>
-                      {item.is_correct ? ' ✓' : ' ✗'}
-                    </span>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="module-detail-empty">No results to display yet. Submit your answers first.</p>
-        )}
-      </div>
-    );
+    navigate(`/modules/${moduleId}/quiz/results`);
   };
 
   return (
@@ -319,16 +248,15 @@ const ModuleQuizListPage = () => {
                     <button type="button" className="module-quiz-submit-btn" onClick={handleSubmitAnswers} disabled={submitting}>
                       {submitting ? 'Submitting…' : 'Submit answers'}
                     </button>
-                    <button type="button" className="module-quiz-results-btn" onClick={handleViewResults} disabled={resultsLoading}>
-                      {resultsLoading ? 'Loading…' : 'View my results'}
+                  </div>
+                )}
+                {justSubmitted && (
+                  <div className="module-quiz-success-actions">
+                    <button type="button" className="module-quiz-submit-btn" onClick={handleViewResults}>
+                      View answers and results
                     </button>
                   </div>
                 )}
-                {(resultsLoading || resultsData != null || resultsError) ? (
-                  <div className="module-quiz-results-wrap" ref={resultsRef}>
-                    {renderResults()}
-                  </div>
-                ) : null}
                 <Pagination currentPage={currentPage} lastPage={lastPage} onPageChange={setPage} total={total} from={from} to={to} />
               </>
             )}

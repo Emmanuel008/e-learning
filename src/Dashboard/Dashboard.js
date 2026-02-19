@@ -7,7 +7,8 @@ import ModuleManagement from './ModuleManagement';
 import UserManagement from './UserManagement';
 import Pagination from '../components/Pagination';
 import { getUserData } from './dashboardService';
-import { moduleApi, certificateApi } from '../api/api';
+import { moduleApi, certificateApi, assignmentApi } from '../api/api';
+import { BASE_URL } from '../api/apiClient';
 
 const MODULE_LIST_PER_PAGE = 6;
 
@@ -30,10 +31,27 @@ function getModuleMetaFromResponse(data, perPage) {
   return { current_page: current, last_page: Math.max(1, Number(last) || 1), total, per_page: per };
 }
 
+function getAssignmentListFromResponse(data) {
+  const returnData = data?.returnData;
+  if (!returnData) return [];
+  const listOfItem = returnData.list_of_item ?? returnData;
+  if (Array.isArray(listOfItem)) return listOfItem;
+  return listOfItem?.data ?? returnData.data ?? [];
+}
+
+function getAssignmentDocumentUrl(row) {
+  const raw = row?.document_url ?? row?.path ?? row?.document ?? row?.document_path ?? row?.file_url;
+  if (!raw || typeof raw !== 'string') return '';
+  if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
+  const siteRoot = BASE_URL.replace(/\/api\/?$/, '');
+  return raw.startsWith('/') ? siteRoot + raw : siteRoot + '/' + raw;
+}
+
 const MENU_LABELS = {
   home: 'Home',
   mymodule: 'MyModule',
   certification: 'Certification',
+  assignment: 'Assignment',
   usermanagement: 'User Management',
   modulemanagement: 'Module Management',
   helpcentre: 'Help Centre'
@@ -58,6 +76,9 @@ const Dashboard = () => {
   const [myCertificates, setMyCertificates] = useState([]);
   const [myCertificatesLoading, setMyCertificatesLoading] = useState(false);
   const [myCertificatesError, setMyCertificatesError] = useState(null);
+  const [myAssignments, setMyAssignments] = useState([]);
+  const [myAssignmentsLoading, setMyAssignmentsLoading] = useState(false);
+  const [myAssignmentsError, setMyAssignmentsError] = useState(null);
 
   const activeMenu = searchParams.get('menu') || 'home';
   const activeTab = searchParams.get('tab') || 'all';
@@ -100,7 +121,9 @@ const Dashboard = () => {
         const returnData = data?.returnData;
         const listOfItem = returnData?.list_of_item ?? returnData;
         const list = Array.isArray(listOfItem) ? listOfItem : listOfItem?.data ?? returnData?.data ?? [];
-        setMyCertificates(list);
+        const myId = Number(user.id);
+        const mine = Array.isArray(list) ? list.filter((c) => Number(c.user_id) === myId) : [];
+        setMyCertificates(mine);
       } else {
         setMyCertificates([]);
         setMyCertificatesError(data?.errorMessage || 'Failed to load certificates.');
@@ -113,11 +136,40 @@ const Dashboard = () => {
     }
   }, []);
 
+  const fetchMyAssignments = useCallback(async () => {
+    const user = getUserData();
+    if (!user?.id) {
+      setMyAssignments([]);
+      return;
+    }
+    setMyAssignmentsLoading(true);
+    setMyAssignmentsError(null);
+    try {
+      const { data } = await assignmentApi.ilist({ assigned_user_id: user.id, per_page: 50, page: 1 });
+      if (data?.status === 'OK') {
+        const list = getAssignmentListFromResponse(data);
+        const myId = Number(user.id);
+        const mine = Array.isArray(list) ? list.filter((a) => Number(a.assigned_user_id) === myId) : [];
+        setMyAssignments(mine);
+        setMyAssignmentsError(null);
+      } else {
+        setMyAssignments([]);
+        setMyAssignmentsError(data?.errorMessage || 'Failed to load assignments.');
+      }
+    } catch (err) {
+      setMyAssignments([]);
+      setMyAssignmentsError(err.response?.data?.errorMessage || err.message || 'Failed to load assignments.');
+    } finally {
+      setMyAssignmentsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (activeMenu === 'mymodule') fetchApiModules(apiModulePage);
     if (activeMenu === 'home') fetchApiModules(1);
     if (activeMenu === 'certification' && userData?.id) fetchMyCertificates();
-  }, [activeMenu, apiModulePage, fetchApiModules, userData?.id, fetchMyCertificates]);
+    if (activeMenu === 'assignment' && userData?.id) fetchMyAssignments();
+  }, [activeMenu, apiModulePage, fetchApiModules, userData?.id, fetchMyCertificates, fetchMyAssignments]);
 
   const setTab = (nextTab) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -185,7 +237,6 @@ const Dashboard = () => {
     }
 
     if (activeMenu === 'certification' && userData) {
-      const myCertsOnly = myCertificates.filter((c) => Number(c.user_id) === Number(userData.id));
       return (
         <div className="dashboard-content">
           <div className="management-table-wrap">
@@ -203,7 +254,7 @@ const Dashboard = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {myCertsOnly.map((cert) => (
+                    {myCertificates.map((cert) => (
                       <tr key={cert.id}>
                         <td>
                           {cert.title || cert.name || `Certificate #${cert.id}`}
@@ -229,8 +280,58 @@ const Dashboard = () => {
                     ))}
                   </tbody>
                 </table>
-                {myCertsOnly.length === 0 && !myCertificatesLoading && (
+                {myCertificates.length === 0 && !myCertificatesLoading && (
                   <p className="management-empty">You have no certificates yet.</p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    if (activeMenu === 'assignment' && userData) {
+      return (
+        <div className="dashboard-content">
+          <div className="management-table-wrap">
+            <h3 className="home-modules-title">My assignments</h3>
+            {myAssignmentsError && <p className="management-error">{myAssignmentsError}</p>}
+            {myAssignmentsLoading ? (
+              <p className="management-empty">Loading assignments…</p>
+            ) : (
+              <>
+                <table className="management-table">
+                  <thead>
+                    <tr>
+                      <th>Title</th>
+                      <th>Description</th>
+                      <th className="management-th-actions">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {myAssignments.map((row) => {
+                      const documentUrl = getAssignmentDocumentUrl(row);
+                      return (
+                        <tr key={row.id}>
+                          <td>{row.title || '—'}</td>
+                          <td className="management-td-desc">{row.description || '—'}</td>
+                          <td className="management-td-actions">
+                            {documentUrl ? (
+                              <>
+                                <a href={documentUrl} target="_blank" rel="noopener noreferrer" className="management-doc-link">View</a>
+                                <a href={documentUrl} download className="management-btn management-btn-edit">Download</a>
+                              </>
+                            ) : (
+                              <span className="management-empty">No document</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                {myAssignments.length === 0 && !myAssignmentsLoading && (
+                  <p className="management-empty">You have no assignments.</p>
                 )}
               </>
             )}

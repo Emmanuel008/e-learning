@@ -694,6 +694,15 @@
   margin-bottom: 1rem;
 }
 
+.module-quiz-success-actions {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+}
+
+.module-quiz-results-actions {
+  margin-bottom: 1.25rem;
+}
+
 .module-quiz-submit-btn {
   padding: 0.6rem 1.25rem;
   font-size: 0.9375rem;
@@ -740,10 +749,16 @@
 }
 
 .module-quiz-results-score {
-  margin: 0 0 1rem 0;
+  margin: 0 0 0.25rem 0;
   font-size: 1rem;
   font-weight: 500;
   color: #2563eb;
+}
+
+.module-quiz-results-percentage {
+  margin: 0 0 1rem 0;
+  font-size: 0.9375rem;
+  color: #64748b;
 }
 
 .module-quiz-results-list {

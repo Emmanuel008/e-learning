@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { getUserData, clearUserData } from './dashboardService';
+import { getUserData } from './dashboardService';
 import { auth } from '../api/api';
+import { useAuth } from '../context/AuthContext';
 import './Dashboard.css';
 
 const menuItems = [
   { id: 'home', label: 'Home', icon: 'home' },
   { id: 'mymodule', label: 'MyModule', icon: 'book' },
   { id: 'certification', label: 'Certification', icon: 'award' },
+  { id: 'assignment', label: 'Assignment', icon: 'clipboard' },
   { id: 'usermanagement', label: 'User Management', icon: 'users' },
   { id: 'modulemanagement', label: 'Module Management', icon: 'folder' },
   { id: 'helpcentre', label: 'Help Centre', icon: 'help-circle' }
@@ -52,12 +54,19 @@ const getIcon = (iconName) => {
         <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
         <line x1="12" y1="17" x2="12.01" y2="17"></line>
       </svg>
+    ),
+    clipboard: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"></path>
+        <rect x="8" y="2" width="8" height="4" rx="1" ry="1"></rect>
+      </svg>
     )
   };
   return icons[iconName] || icons.home;
 };
 
 const DashboardShell = ({ activeMenuId = 'home', children }) => {
+  const { setUser } = useAuth();
   const [userData, setUserData] = useState(null);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const navigate = useNavigate();
@@ -76,9 +85,9 @@ const DashboardShell = ({ activeMenuId = 'home', children }) => {
     try {
       await auth.logout();
     } catch (_) {
-      // Proceed to clear local state even if API call fails (e.g. token expired)
+      // ignore
     }
-    clearUserData();
+    setUser(null);
     navigate('/login');
   };
 

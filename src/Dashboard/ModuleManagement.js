@@ -6,9 +6,9 @@ import { moduleApi, learningMaterialApi, quizApi, certificateApi, assignmentApi,
 import { BASE_URL } from '../api/apiClient';
 import './Dashboard.css';
 
-/** Build assignment document URL: support multiple API keys and relative paths. */
+/** Build assignment document URL: support document_url (API response), path, and other keys. */
 function getAssignmentDocumentUrl(row) {
-  const raw = row?.path ?? row?.document ?? row?.document_path ?? row?.file_url ?? row?.file_path ?? row?.url ?? row?.storage_path ?? (row?.document && typeof row.document === 'object' ? row.document.url : null);
+  const raw = row?.document_url ?? row?.path ?? row?.document ?? row?.document_path ?? row?.file_url ?? row?.file_path ?? row?.url ?? row?.storage_path ?? (row?.document && typeof row.document === 'object' ? row.document.url : null);
   if (!raw || typeof raw !== 'string') return '';
   if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
   const siteRoot = BASE_URL.replace(/\/api\/?$/, '');
@@ -468,8 +468,8 @@ const ModuleManagement = () => {
       }
       return;
     }
-    setList(list.filter((i) => i.id !== item.id));
-    await swalSuccess('Deleted!', 'The item has been deleted.');
+      setList(list.filter((i) => i.id !== item.id));
+      await swalSuccess('Deleted!', 'The item has been deleted.');
   };
 
   const handleSaveModule = async (e) => {
@@ -583,7 +583,7 @@ const ModuleManagement = () => {
       const ok = data?.status === 'OK';
       const msg = Array.isArray(data?.errorMessage) ? data.errorMessage[0] : data?.errorMessage;
       if (ok) {
-        closeModal();
+    closeModal();
         await swalSuccess(modalMode === 'add' ? 'Assignment added!' : 'Assignment updated!', msg || (modalMode === 'add' ? 'The assignment has been added.' : 'The assignment has been updated.'));
         fetchAssignments(assignmentMeta.current_page);
       } else {
@@ -629,7 +629,7 @@ const ModuleManagement = () => {
       const ok = data?.status === 'OK';
       const msg = Array.isArray(data?.errorMessage) ? data.errorMessage[0] : data?.errorMessage;
       if (ok) {
-        closeModal();
+    closeModal();
         await swalSuccess(modalMode === 'add' ? 'Learning material added!' : 'Learning material updated!', msg || (modalMode === 'add' ? 'The learning material has been added.' : 'The learning material has been updated.'));
         fetchMaterials(materialMeta.current_page);
       } else {
@@ -697,7 +697,7 @@ const ModuleManagement = () => {
       const ok = data?.status === 'OK';
       const msg = Array.isArray(data?.errorMessage) ? data.errorMessage[0] : data?.errorMessage;
       if (ok) {
-        closeModal();
+    closeModal();
         await swalSuccess(modalMode === 'add' ? 'Quiz added!' : 'Quiz updated!', msg || (modalMode === 'add' ? 'The quiz has been added.' : 'The quiz has been updated.'));
         fetchQuizzes(quizMeta.current_page);
       } else {
@@ -728,7 +728,7 @@ const ModuleManagement = () => {
       if (modalType === 'module') {
         const rows = [
           ['Name', editingItem.name || '—'],
-          ['Description', editingItem.description || '—'],
+        ['Description', editingItem.description || '—'],
           ['Code', editingItem.code || '—']
         ];
         return (
@@ -773,8 +773,8 @@ const ModuleManagement = () => {
         ) : '—';
         const rows = [
           ['Module', editingItem.module || '—'],
-          ['Title', editingItem.title],
-          ['Description', editingItem.description || '—'],
+        ['Title', editingItem.title],
+        ['Description', editingItem.description || '—'],
           ['Type', editingItem.type === 'document' ? 'Document' : 'Media'],
           ['Media', mediaCell]
         ];
@@ -795,20 +795,20 @@ const ModuleManagement = () => {
         const opts = editingItem.options ?? [];
         const optionsContent = opts.length
           ? opts.map((o, i) => (
-              <React.Fragment key={i}>
+            <React.Fragment key={i}>
                 {typeof o === 'object' ? o.value : o}
                 {i < opts.length - 1 && <br />}
-              </React.Fragment>
-            ))
-          : '—';
+            </React.Fragment>
+          ))
+        : '—';
         const correctOpt = editingItem.correct_option != null && opts.length
           ? opts.find((o) => (typeof o === 'object' ? o.option : o) === editingItem.correct_option)
           : null;
         const correctAnswerDisplay = correctOpt != null ? (typeof correctOpt === 'object' ? correctOpt.value : correctOpt) : '—';
-        const quizRows = [
+      const quizRows = [
           ['Module', editingItem.name || '—'],
-          ['Question', editingItem.question || '—'],
-          ['Options', optionsContent],
+        ['Question', editingItem.question || '—'],
+        ['Options', optionsContent],
           ['Correct answer', correctAnswerDisplay]
         ];
         return (
@@ -826,7 +826,7 @@ const ModuleManagement = () => {
 
       if (modalType === 'assignment') {
         const viewAssignedUser = userOptions.find((u) => Number(u.id) === Number(editingItem.assigned_user_id));
-        const viewAssignedUserName = viewAssignedUser ? (viewAssignedUser.name || viewAssignedUser.email) : (editingItem.assigned_username || editingItem.username || editingItem.email || '—');
+        const viewAssignedUserName = editingItem.assigned_user_name ?? (viewAssignedUser ? (viewAssignedUser.name || viewAssignedUser.email) : (editingItem.assigned_username || editingItem.username || editingItem.email || '—'));
         const viewDocUrl = getAssignmentDocumentUrl(editingItem);
         const docCell = viewDocUrl ? (
           <a href={viewDocUrl} target="_blank" rel="noopener noreferrer">View document</a>
@@ -837,17 +837,17 @@ const ModuleManagement = () => {
           ['Assigned user', viewAssignedUserName],
           ['Document', docCell]
         ];
-        return (
-          <Modal title={title} show={modalOpen} onClose={closeModal}>
-            <table className="modal-view-table">
-              <tbody>
-                {rows.map(([label, value], i) => (
-                  <tr key={i}><th>{label}</th><td>{value}</td></tr>
-                ))}
-              </tbody>
-            </table>
-          </Modal>
-        );
+      return (
+        <Modal title={title} show={modalOpen} onClose={closeModal}>
+          <table className="modal-view-table">
+            <tbody>
+              {rows.map(([label, value], i) => (
+                <tr key={i}><th>{label}</th><td>{value}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </Modal>
+      );
       }
     }
 
@@ -1106,30 +1106,30 @@ const ModuleManagement = () => {
             <p className="management-loading">Loading modules…</p>
           ) : (
             <>
-              <table className="management-table">
-                <thead>
-                  <tr>
+          <table className="management-table">
+            <thead>
+              <tr>
                     <th>Name</th>
-                    <th>Description</th>
+                <th>Description</th>
                     <th>Code</th>
-                    <th className="management-th-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
+                <th className="management-th-actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
                   {modules.map((row) => (
-                    <tr key={row.id}>
+                <tr key={row.id}>
                       <td>{row.name}</td>
-                      <td className="management-td-desc">{row.description || '—'}</td>
+                  <td className="management-td-desc">{row.description || '—'}</td>
                       <td>{row.code}</td>
-                      <td className="management-td-actions">
+                  <td className="management-td-actions">
                         <button type="button" className="management-btn management-btn-view" onClick={() => openView('module', row)}>View</button>
                         <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('module', row)}>Update</button>
                         <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Module', row, modules, setModules)}>Delete</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
               {modules.length === 0 && <p className="management-empty">No modules yet. Add one to get started.</p>}
               <Pagination currentPage={currentPage} lastPage={lastPage} onPageChange={setModulePage} total={total} from={from} to={to} />
             </>
@@ -1155,22 +1155,22 @@ const ModuleManagement = () => {
             <p className="management-loading">Loading learning materials…</p>
           ) : (
             <>
-              <table className="management-table">
-                <thead>
-                  <tr>
-                    <th>Title</th>
-                    <th>Description</th>
-                    <th>Module</th>
+          <table className="management-table">
+            <thead>
+              <tr>
+                <th>Title</th>
+                <th>Description</th>
+                <th>Module</th>
                     <th>Type</th>
                     <th>Media</th>
-                    <th className="management-th-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
+                <th className="management-th-actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
                   {materials.map((row) => (
-                    <tr key={row.id}>
-                      <td>{row.title}</td>
-                      <td className="management-td-desc">{row.description || '—'}</td>
+                <tr key={row.id}>
+                  <td>{row.title}</td>
+                  <td className="management-td-desc">{row.description || '—'}</td>
                       <td>{row.module || '—'}</td>
                       <td>{row.type === 'document' ? 'Document' : 'Media'}</td>
                       <td>
@@ -1178,15 +1178,15 @@ const ModuleManagement = () => {
                           <a href={row.media} target="_blank" rel="noopener noreferrer">View</a>
                         ) : '—'}
                       </td>
-                      <td className="management-td-actions">
+                  <td className="management-td-actions">
                         <button type="button" className="management-btn management-btn-view" onClick={() => openView('learning-material', row)}>View</button>
                         <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('learning-material', row)}>Update</button>
                         <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Learning Material', row, materials, setMaterials)}>Delete</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
               {materials.length === 0 && <p className="management-empty">No learning materials yet. Add one to get started.</p>}
               <Pagination currentPage={currentPage} lastPage={lastPage} onPageChange={setMaterialPage} total={total} from={from} to={to} />
             </>
@@ -1212,38 +1212,38 @@ const ModuleManagement = () => {
             <p className="management-loading">Loading quizzes…</p>
           ) : (
             <>
-              <table className="management-table">
-                <thead>
-                  <tr>
-                    <th>Question</th>
-                    <th>Module</th>
-                    <th>Options</th>
-                    <th>Correct answer</th>
-                    <th className="management-th-actions">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
+          <table className="management-table">
+            <thead>
+              <tr>
+                <th>Question</th>
+                <th>Module</th>
+                <th>Options</th>
+                <th>Correct answer</th>
+                <th className="management-th-actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
                   {quizzes.map((row) => {
                     const opts = row.options ?? [];
                     const correctOpt = row.correct_option != null ? opts.find((o) => (typeof o === 'object' ? o.option : o) === row.correct_option) : null;
                     const correctDisplay = correctOpt != null ? (typeof correctOpt === 'object' ? correctOpt.value : correctOpt) : '—';
                     return (
-                      <tr key={row.id}>
-                        <td className="management-td-desc">{row.question || '—'}</td>
+                <tr key={row.id}>
+                  <td className="management-td-desc">{row.question || '—'}</td>
                         <td>{row.name || '—'}</td>
                         <td>{opts.length}</td>
                         <td>{correctDisplay}</td>
-                        <td className="management-td-actions">
-                          <button type="button" className="management-btn management-btn-view" onClick={() => openView('quiz', row)}>View</button>
+                  <td className="management-td-actions">
+                    <button type="button" className="management-btn management-btn-view" onClick={() => openView('quiz', row)}>View</button>
                           <button type="button" className="management-btn management-btn-edit" onClick={() => openEdit('quiz', row)}>Update</button>
-                          <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Quiz', row, quizzes, setQuizzes)}>Delete</button>
-                        </td>
-                      </tr>
+                    <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Quiz', row, quizzes, setQuizzes)}>Delete</button>
+                  </td>
+                </tr>
                     );
                   })}
-                </tbody>
-              </table>
-              {quizzes.length === 0 && <p className="management-empty">No quizzes yet. Add one to get started.</p>}
+            </tbody>
+          </table>
+          {quizzes.length === 0 && <p className="management-empty">No quizzes yet. Add one to get started.</p>}
               <Pagination currentPage={currentPage} lastPage={lastPage} onPageChange={setQuizPage} total={total} from={from} to={to} />
             </>
           )}
@@ -1334,7 +1334,7 @@ const ModuleManagement = () => {
                 <tbody>
                   {assignments.map((row) => {
                     const assignedUser = userOptions.find((u) => Number(u.id) === Number(row.assigned_user_id));
-                    const assignedUserName = assignedUser ? (assignedUser.name || assignedUser.email) : (row.assigned_username || row.username || row.email || '—');
+                    const assignedUserName = row.assigned_user_name ?? (assignedUser ? (assignedUser.name || assignedUser.email) : (row.assigned_username || row.username || row.email || '—'));
                     const documentUrl = getAssignmentDocumentUrl(row);
                     return (
                     <tr key={row.id}>

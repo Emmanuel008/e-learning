@@ -18,6 +18,9 @@ apiClient.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+    if (userData?.id) {
+      config.params = { ...config.params, user_id: userData.id };
+    }
     return config;
   },
   (error) => Promise.reject(error)
