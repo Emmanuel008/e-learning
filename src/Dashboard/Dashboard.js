@@ -12,39 +12,34 @@ import { BASE_URL } from '../api/apiClient';
 
 const MODULE_LIST_PER_PAGE = 6;
 
-function getModuleListFromResponse(data) {
-  const returnData = data?.returnData;
-  if (!returnData) return [];
-  const listOfItem = returnData.list_of_item ?? returnData;
-  if (Array.isArray(listOfItem)) return listOfItem;
-  return listOfItem?.data ?? returnData.data ?? [];
+function getListFromResponse(data) {
+  const rd = data?.returnData;
+  if (!rd) return [];
+  const list = rd.list_of_item ?? rd;
+  return Array.isArray(list) ? list : list?.data ?? rd.data ?? [];
 }
 
 function getModuleMetaFromResponse(data, perPage) {
-  const returnData = data?.returnData || {};
-  const listOfItem = returnData.list_of_item || returnData;
-  const meta = listOfItem?.meta || returnData.meta || listOfItem || returnData || data;
-  const total = Number(meta.total ?? meta.totalCount ?? returnData.total ?? 0) || 0;
+  const rd = data?.returnData || {};
+  const list = rd.list_of_item || rd;
+  const meta = list?.meta || rd.meta || list || rd || data;
+  const total = Number(meta.total ?? meta.totalCount ?? rd.total ?? 0) || 0;
   const per = Number(meta.per_page ?? meta.perPage ?? perPage) || perPage;
   const current = Number(meta.current_page ?? meta.currentPage ?? 1) || 1;
   const last = meta.last_page ?? meta.lastPage ?? (per > 0 ? Math.max(1, Math.ceil(total / per)) : 1);
   return { current_page: current, last_page: Math.max(1, Number(last) || 1), total, per_page: per };
 }
 
-function getAssignmentListFromResponse(data) {
-  const returnData = data?.returnData;
-  if (!returnData) return [];
-  const listOfItem = returnData.list_of_item ?? returnData;
-  if (Array.isArray(listOfItem)) return listOfItem;
-  return listOfItem?.data ?? returnData.data ?? [];
-}
-
 function getAssignmentDocumentUrl(row) {
   const raw = row?.document_url ?? row?.path ?? row?.document ?? row?.document_path ?? row?.file_url;
   if (!raw || typeof raw !== 'string') return '';
   if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
-  const siteRoot = BASE_URL.replace(/\/api\/?$/, '');
-  return raw.startsWith('/') ? siteRoot + raw : siteRoot + '/' + raw;
+  const root = BASE_URL.replace(/\/api\/?$/, '');
+  return raw.startsWith('/') ? root + raw : root + '/' + raw;
+}
+
+function getModuleInitials(m) {
+  return ((m?.code || m?.name || '—').replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase()) || '—';
 }
 
 const MENU_LABELS = {
@@ -88,107 +83,69 @@ const Dashboard = () => {
   }, []);
 
   const fetchApiModules = useCallback(async (pageNum) => {
-    setApiModuleLoading(true);
-    setApiModuleError(null);
+    setApiModuleLoading(true); setApiModuleError(null);
     try {
       const { data } = await moduleApi.ilist({ page: pageNum, per_page: MODULE_LIST_PER_PAGE });
       if (data?.status === 'OK') {
-        setApiModules(getModuleListFromResponse(data));
+        setApiModules(getListFromResponse(data));
         setApiModuleMeta(getModuleMetaFromResponse(data, MODULE_LIST_PER_PAGE));
       } else {
-        setApiModules([]);
-        setApiModuleError(data?.errorMessage || 'Failed to load modules.');
+        setApiModules([]); setApiModuleError(data?.errorMessage || 'Failed to load modules.');
       }
     } catch (err) {
-      setApiModules([]);
-      setApiModuleError(err.response?.data?.errorMessage || err.message || 'Failed to load modules.');
-    } finally {
-      setApiModuleLoading(false);
-    }
+      setApiModules([]); setApiModuleError(err.response?.data?.errorMessage || err.message || 'Failed to load modules.');
+    } finally { setApiModuleLoading(false); }
   }, []);
 
   const fetchMyCertificates = useCallback(async () => {
     const user = getUserData();
-    if (!user?.id) {
-      setMyCertificates([]);
-      return;
-    }
-    setMyCertificatesLoading(true);
-    setMyCertificatesError(null);
+    if (!user?.id) { setMyCertificates([]); return; }
+    setMyCertificatesLoading(true); setMyCertificatesError(null);
     try {
       const { data } = await certificateApi.ilist({ user_id: user.id, per_page: 50, page: 1 });
       if (data?.status === 'OK') {
-        const returnData = data?.returnData;
-        const listOfItem = returnData?.list_of_item ?? returnData;
-        const list = Array.isArray(listOfItem) ? listOfItem : listOfItem?.data ?? returnData?.data ?? [];
-        const myId = Number(user.id);
-        const mine = Array.isArray(list) ? list.filter((c) => Number(c.user_id) === myId) : [];
-        setMyCertificates(mine);
+        const list = getListFromResponse(data);
+        setMyCertificates(list.filter((c) => Number(c.user_id) === Number(user.id)));
       } else {
-        setMyCertificates([]);
-        setMyCertificatesError(data?.errorMessage || 'Failed to load certificates.');
+        setMyCertificates([]); setMyCertificatesError(data?.errorMessage || 'Failed to load certificates.');
       }
     } catch (err) {
-      setMyCertificates([]);
-      setMyCertificatesError(err.response?.data?.errorMessage || err.message || 'Failed to load certificates.');
-    } finally {
-      setMyCertificatesLoading(false);
-    }
+      setMyCertificates([]); setMyCertificatesError(err.response?.data?.errorMessage || err.message || 'Failed to load certificates.');
+    } finally { setMyCertificatesLoading(false); }
   }, []);
 
   const fetchMyAssignments = useCallback(async () => {
     const user = getUserData();
-    if (!user?.id) {
-      setMyAssignments([]);
-      return;
-    }
-    setMyAssignmentsLoading(true);
-    setMyAssignmentsError(null);
+    if (!user?.id) { setMyAssignments([]); return; }
+    setMyAssignmentsLoading(true); setMyAssignmentsError(null);
     try {
       const { data } = await assignmentApi.ilist({ assigned_user_id: user.id, per_page: 50, page: 1 });
       if (data?.status === 'OK') {
-        const list = getAssignmentListFromResponse(data);
-        const myId = Number(user.id);
-        const mine = Array.isArray(list) ? list.filter((a) => Number(a.assigned_user_id) === myId) : [];
-        setMyAssignments(mine);
-        setMyAssignmentsError(null);
+        const list = getListFromResponse(data);
+        setMyAssignments(list.filter((a) => Number(a.assigned_user_id) === Number(user.id)));
       } else {
-        setMyAssignments([]);
-        setMyAssignmentsError(data?.errorMessage || 'Failed to load assignments.');
+        setMyAssignments([]); setMyAssignmentsError(data?.errorMessage || 'Failed to load assignments.');
       }
     } catch (err) {
-      setMyAssignments([]);
-      setMyAssignmentsError(err.response?.data?.errorMessage || err.message || 'Failed to load assignments.');
-    } finally {
-      setMyAssignmentsLoading(false);
-    }
+      setMyAssignments([]); setMyAssignmentsError(err.response?.data?.errorMessage || err.message || 'Failed to load assignments.');
+    } finally { setMyAssignmentsLoading(false); }
   }, []);
 
   const fetchHomeModules = useCallback(async () => {
     const user = getUserData();
     if (!user?.id) return;
-    setApiModuleLoading(true);
-    setApiModuleError(null);
+    setApiModuleLoading(true); setApiModuleError(null);
     try {
-      const { data } = await moduleApi.ilist({
-        paginate: true,
-        per_page: 6,
-        page: 1,
-        user_id: user.id
-      });
+      const { data } = await moduleApi.ilist({ paginate: true, per_page: 6, page: 1, user_id: user.id });
       if (data?.status === 'OK') {
-        setApiModules(getModuleListFromResponse(data));
+        setApiModules(getListFromResponse(data));
         setApiModuleMeta(getModuleMetaFromResponse(data, 6));
       } else {
-        setApiModules([]);
-        setApiModuleError(data?.errorMessage || 'Failed to load modules.');
+        setApiModules([]); setApiModuleError(data?.errorMessage || 'Failed to load modules.');
       }
     } catch (err) {
-      setApiModules([]);
-      setApiModuleError(err.response?.data?.errorMessage || err.message || 'Failed to load modules.');
-    } finally {
-      setApiModuleLoading(false);
-    }
+      setApiModules([]); setApiModuleError(err.response?.data?.errorMessage || err.message || 'Failed to load modules.');
+    } finally { setApiModuleLoading(false); }
   }, []);
 
   useEffect(() => {
@@ -200,8 +157,7 @@ const Dashboard = () => {
 
   const setTab = (nextTab) => {
     const nextParams = new URLSearchParams(searchParams);
-    nextParams.set('menu', activeMenu);
-    nextParams.set('tab', nextTab);
+    nextParams.set('menu', activeMenu); nextParams.set('tab', nextTab);
     setSearchParams(nextParams);
   };
 
@@ -283,25 +239,9 @@ const Dashboard = () => {
                   <tbody>
                     {myCertificates.map((cert) => (
                       <tr key={cert.id}>
-                        <td>
-                          {cert.title || cert.name || `Certificate #${cert.id}`}
-                          {cert.created_at && (
-                            <span className="certificate-date"> — {cert.created_at}</span>
-                          )}
-                        </td>
+                        <td>{cert.title || cert.name || `Certificate #${cert.id}`}{cert.created_at && <span className="certificate-date"> — {cert.created_at}</span>}</td>
                         <td className="management-td-actions">
-                          {cert.path ? (
-                            <>
-                              <a href={cert.path} target="_blank" rel="noopener noreferrer" className="management-btn management-btn-view">
-                                View
-                              </a>
-                              <a href={cert.path} download className="management-btn management-btn-edit">
-                                Download
-                              </a>
-                            </>
-                          ) : (
-                            <span className="management-empty">No file</span>
-                          )}
+                          {cert.path ? (<><a href={cert.path} target="_blank" rel="noopener noreferrer" className="management-btn management-btn-view">View</a><a href={cert.path} download className="management-btn management-btn-edit">Download</a></>) : <span className="management-empty">No file</span>}
                         </td>
                       </tr>
                     ))}
@@ -337,21 +277,12 @@ const Dashboard = () => {
                   </thead>
                   <tbody>
                     {myAssignments.map((row) => {
-                      const documentUrl = getAssignmentDocumentUrl(row);
+                      const docUrl = getAssignmentDocumentUrl(row);
                       return (
                         <tr key={row.id}>
                           <td>{row.title || '—'}</td>
                           <td className="management-td-desc">{row.description || '—'}</td>
-                          <td className="management-td-actions">
-                            {documentUrl ? (
-                              <>
-                                <a href={documentUrl} target="_blank" rel="noopener noreferrer" className="management-doc-link">View</a>
-                                <a href={documentUrl} download className="management-btn management-btn-edit">Download</a>
-                              </>
-                            ) : (
-                              <span className="management-empty">No document</span>
-                            )}
-                          </td>
+                          <td className="management-td-actions">{docUrl ? (<><a href={docUrl} target="_blank" rel="noopener noreferrer" className="management-doc-link">View</a><a href={docUrl} download className="management-btn management-btn-edit">Download</a></>) : <span className="management-empty">No document</span>}</td>
                         </tr>
                       );
                     })}           
@@ -387,32 +318,16 @@ const Dashboard = () => {
               <p className="management-empty">No modules found.</p>
             ) : (
               <div className="home-module-cards">
-                {apiModules.map((m) => {
-                  const initials = (m.code || m.name || '—')
-                    .replace(/[^a-zA-Z0-9]/g, '')
-                    .slice(0, 2)
-                    .toUpperCase() || '—';
-                  return (
-                    <div key={m.id} className="home-module-card">
-                      <div className="home-module-card-icon" aria-hidden>
-                        {initials}
-                      </div>
-                      <div className="home-module-card-body">
-                        <h4 className="home-module-card-title">
-                          {m.code ?? '—'} — {m.name ?? '—'}
-                        </h4>
-                        <p className="home-module-card-types">Documents Videos Quiz</p>
-                      </div>
-                      <button
-                        type="button"
-                        className="home-module-card-open"
-                        onClick={() => navigate(`/modules/${m.id}`)}
-                      >
-                        Enroll
-                      </button>
+                {apiModules.map((m) => (
+                  <div key={m.id} className="home-module-card">
+                    <div className="home-module-card-icon" aria-hidden>{getModuleInitials(m)}</div>
+                    <div className="home-module-card-body">
+                      <h4 className="home-module-card-title">{m.code ?? '—'} — {m.name ?? '—'}</h4>
+                      <p className="home-module-card-types">Documents Videos Quiz</p>
                     </div>
-                  );
-                })}
+                    <button type="button" className="home-module-card-open" onClick={() => navigate(`/modules/${m.id}`)}>Enroll</button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
