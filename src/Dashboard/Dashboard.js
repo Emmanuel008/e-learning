@@ -164,12 +164,39 @@ const Dashboard = () => {
     }
   }, []);
 
+  const fetchHomeModules = useCallback(async () => {
+    const user = getUserData();
+    if (!user?.id) return;
+    setApiModuleLoading(true);
+    setApiModuleError(null);
+    try {
+      const { data } = await moduleApi.ilist({
+        paginate: true,
+        per_page: 6,
+        page: 1,
+        user_id: user.id
+      });
+      if (data?.status === 'OK') {
+        setApiModules(getModuleListFromResponse(data));
+        setApiModuleMeta(getModuleMetaFromResponse(data, 6));
+      } else {
+        setApiModules([]);
+        setApiModuleError(data?.errorMessage || 'Failed to load modules.');
+      }
+    } catch (err) {
+      setApiModules([]);
+      setApiModuleError(err.response?.data?.errorMessage || err.message || 'Failed to load modules.');
+    } finally {
+      setApiModuleLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (activeMenu === 'mymodule') fetchApiModules(apiModulePage);
-    if (activeMenu === 'home') fetchApiModules(1);
+    if (activeMenu === 'home' && userData?.id) fetchHomeModules();
     if (activeMenu === 'certification' && userData?.id) fetchMyCertificates();
     if (activeMenu === 'assignment' && userData?.id) fetchMyAssignments();
-  }, [activeMenu, apiModulePage, fetchApiModules, userData?.id, fetchMyCertificates, fetchMyAssignments]);
+  }, [activeMenu, apiModulePage, fetchApiModules, userData?.id, fetchHomeModules, fetchMyCertificates, fetchMyAssignments]);
 
   const setTab = (nextTab) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -349,67 +376,44 @@ const Dashboard = () => {
     }
 
     if (activeMenu === 'home' && userData) {
-      const total = apiModuleMeta.total;
-      const completed = apiModules.filter((m) => (m.progress ?? 0) >= 100).length;
-      const inProgress = apiModules.filter((m) => {
-        const p = m.progress ?? 0;
-        return p > 0 && p < 100;
-      }).length;
-      const notStarted = apiModules.filter((m) => (m.progress ?? 0) === 0).length;
-
       return (
         <div className="dashboard-content">
-          <div className="home-stats">
-            <div className="home-stat-card">
-              <span className="home-stat-value">{total}</span>
-              <span className="home-stat-label">Total modules</span>
-            </div>
-            <div className="home-stat-card">
-              <span className="home-stat-value">{completed}</span>
-              <span className="home-stat-label">Completed</span>
-            </div>
-            <div className="home-stat-card">
-              <span className="home-stat-value">{inProgress}</span>
-              <span className="home-stat-label">In progress</span>
-            </div>
-            <div className="home-stat-card">
-              <span className="home-stat-value">{notStarted}</span>
-              <span className="home-stat-label">Not started</span>
-            </div>
-          </div>
           <div className="home-modules-section">
             <h3 className="home-modules-title">Your modules</h3>
             {apiModuleLoading ? (
               <p className="management-empty">Loading modules…</p>
+            ) : apiModuleError ? (
+              <p className="management-error">{apiModuleError}</p>
+            ) : apiModules.length === 0 ? (
+              <p className="management-empty">No modules found.</p>
             ) : (
-              <div className="management-table-wrap">
-                <table className="management-table home-modules-table">
-                  <thead>
-                    <tr>
-                      <th>Module code</th>
-                      <th>Module name</th>
-                      <th>Status</th>
-                      <th>Progress</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {apiModules.map((m) => (
-                      <tr key={m.id}>
-                        <td>{m.code ?? '—'}</td>
-                        <td>{m.name ?? '—'}</td>
-                        <td>
-                          <span className={`mymodule-status-badge ${(m.status || '').toLowerCase()}`}>
-                            {m.status ?? '—'}
-                          </span>
-                        </td>
-                        <td>{m.progress ?? 0}%</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {apiModules.length === 0 && (
-                  <p className="management-empty">No modules found. Data is loaded from the API.</p>
-                )}
+              <div className="home-module-cards">
+                {apiModules.map((m) => {
+                  const initials = (m.code || m.name || '—')
+                    .replace(/[^a-zA-Z0-9]/g, '')
+                    .slice(0, 2)
+                    .toUpperCase() || '—';
+                  return (
+                    <div key={m.id} className="home-module-card">
+                      <div className="home-module-card-icon" aria-hidden>
+                        {initials}
+                      </div>
+                      <div className="home-module-card-body">
+                        <h4 className="home-module-card-title">
+                          {m.code ?? '—'} — {m.name ?? '—'}
+                        </h4>
+                        <p className="home-module-card-types">Documents Videos Quiz</p>
+                      </div>
+                      <button
+                        type="button"
+                        className="home-module-card-open"
+                        onClick={() => navigate(`/modules/${m.id}`)}
+                      >
+                        Open
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
