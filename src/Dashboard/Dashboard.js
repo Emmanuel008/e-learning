@@ -354,7 +354,7 @@ const Dashboard = () => {
                           </td>
                         </tr>
                       );
-                    })}
+                    })}           
                   </tbody>
                 </table>
                 {myAssignments.length === 0 && !myAssignmentsLoading && (
