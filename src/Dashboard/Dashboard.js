@@ -379,7 +379,6 @@ const Dashboard = () => {
       return (
         <div className="dashboard-content">
           <div className="home-modules-section">
-            <h3 className="home-modules-title">Your modules</h3>
             {apiModuleLoading ? (
               <p className="management-empty">Loading modules…</p>
             ) : apiModuleError ? (
@@ -409,7 +408,7 @@ const Dashboard = () => {
                         className="home-module-card-open"
                         onClick={() => navigate(`/modules/${m.id}`)}
                       >
-                        Open
+                        Enroll
                       </button>
                     </div>
                   );
