@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import Input from '../components/Input';
 import { registerUser } from './RegisterService';
@@ -132,6 +132,9 @@ const RegisterPage = () => {
                         'Register'
                     )}
                 </button>
+                <p className="register-switch-text">
+                    Already have an account? <Link to="/login" className="register-switch-link">Login</Link>
+                </p>
             </form>
         </div>
     );

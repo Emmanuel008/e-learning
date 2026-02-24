@@ -79,6 +79,23 @@
     vertical-align: middle;
 }
 
+.login-switch-text {
+    margin-top: 1.25rem;
+    text-align: center;
+    font-size: 14px;
+    color: #555;
+}
+
+.login-switch-link {
+    color: #2563eb;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.login-switch-link:hover {
+    text-decoration: underline;
+}
+
 @keyframes spin {
     to {
         transform: rotate(360deg);

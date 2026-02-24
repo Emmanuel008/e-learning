@@ -475,11 +475,20 @@
     border-radius: 8px;
     cursor: pointer;
     transition: background-color 0.2s, color 0.2s;
+    display: inline-block;
+    text-decoration: none;
+    text-align: center;
 }
 
 .home-module-card-open:hover {
     background: #bfdbfe;
     color: #1e40af;
+}
+
+.home-module-card-no-file {
+    flex-shrink: 0;
+    font-size: 0.875rem;
+    color: #9ca3af;
 }
 
 .content-header {

@@ -20,21 +20,9 @@ const Home = () => {
       <header className="home-header">
         <div className="home-header-inner">
           <div className="home-brand">
-            <div className="home-logo-icon">LMS</div>
+            <img src={process.env.PUBLIC_URL + '/BUNI.png'} alt="BUNI" className="home-logo-img" />
             <span className="home-brand-text">E-Learning Platform</span>
           </div>
-          <nav className="home-nav">
-            <button type="button" className="home-nav-login" onClick={handleLoginClick}>
-              Log in
-            </button>
-            <button
-              type="button"
-              className="home-btn home-btn-primary home-btn-header"
-              onClick={handleRegisterClick}
-            >
-              Get started
-            </button>
-          </nav>
         </div>
       </header>
 

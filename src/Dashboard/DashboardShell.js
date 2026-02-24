@@ -5,15 +5,21 @@ import { auth } from '../api/api';
 import { useAuth } from '../context/AuthContext';
 import './Dashboard.css';
 
-const menuItems = [
-  { id: 'home', label: 'Home', icon: 'home' },
-  { id: 'mymodule', label: 'MyModule', icon: 'book' },
-  { id: 'certification', label: 'Certification', icon: 'award' },
-  { id: 'assignment', label: 'Assignment', icon: 'clipboard' },
-  { id: 'usermanagement', label: 'User Management', icon: 'users' },
-  { id: 'modulemanagement', label: 'Module Management', icon: 'folder' },
-  { id: 'helpcentre', label: 'Help Centre', icon: 'help-circle' }
+const ALL_MENU_ITEMS = [
+  { id: 'home', label: 'Home', icon: 'home', roles: ['admin', 'user'] },
+  { id: 'mymodule', label: 'MyModule', icon: 'book', roles: ['user'] },
+  { id: 'certification', label: 'Certification', icon: 'award', roles: ['user'] },
+  { id: 'assignment', label: 'Assignment', icon: 'clipboard', roles: ['user'] },
+  { id: 'usermanagement', label: 'User Management', icon: 'users', roles: ['admin'] },
+  { id: 'modulemanagement', label: 'Module Management', icon: 'folder', roles: ['admin'] },
+  { id: 'helpcentre', label: 'Help Centre', icon: 'help-circle', roles: ['admin', 'user'] }
 ];
+
+const getMenuItemsForRole = (role) => {
+  const r = (role || '').toString().toLowerCase();
+  const isAdmin = r === 'admin' || r === 'administrator';
+  return ALL_MENU_ITEMS.filter((item) => item.roles.includes(isAdmin ? 'admin' : 'user'));
+};
 
 const getIcon = (iconName) => {
   const icons = {
@@ -139,7 +145,7 @@ const DashboardShell = ({ activeMenuId = 'home', children }) => {
       <div className="dashboard-body">
         <aside className="dashboard-sidebar">
           <nav className="sidebar-nav">
-            {menuItems.map((item) => (
+            {getMenuItemsForRole(userData?.role).map((item) => (
               <button
                 key={item.id}
                 className={`nav-item ${activeMenuId === item.id ? 'active' : ''}`}

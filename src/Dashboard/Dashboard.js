@@ -80,9 +80,21 @@ const Dashboard = () => {
   const activeMenu = searchParams.get('menu') || 'home';
   const activeTab = searchParams.get('tab') || 'all';
 
+  const allowedMenuIds = React.useMemo(() => {
+    const r = (userData?.role || '').toString().toLowerCase();
+    const isAdmin = r === 'admin' || r === 'administrator';
+    if (isAdmin) return ['home', 'usermanagement', 'modulemanagement', 'helpcentre'];
+    return ['home', 'mymodule', 'certification', 'assignment', 'helpcentre'];
+  }, [userData?.role]);
+
   useEffect(() => {
     setUserData(getUserData());
   }, []);
+
+  useEffect(() => {
+    if (!userData || allowedMenuIds.includes(activeMenu)) return;
+    setSearchParams(new URLSearchParams({ menu: 'home' }));
+  }, [userData, activeMenu, allowedMenuIds, setSearchParams]);
 
   const fetchMyCertificates = useCallback(async () => {
     const user = getUserData();
@@ -252,35 +264,34 @@ const Dashboard = () => {
     if (activeMenu === 'certification' && userData) {
       return (
         <div className="dashboard-content">
-          <div className="management-table-wrap">
-            <h3 className="home-modules-title">My certificates</h3>
+          <div className="home-modules-section">
             {myCertificatesError && <p className="management-error">{myCertificatesError}</p>}
             {myCertificatesLoading ? (
               <p className="management-empty">Loading certificates…</p>
+            ) : myCertificates.length === 0 ? (
+              <p className="management-empty">You have no certificates yet.</p>
             ) : (
-              <>
-                <table className="management-table">
-                  <thead>
-                    <tr>
-                      <th>Certificate</th>
-                      <th className="management-th-actions">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {myCertificates.map((cert) => (
-                      <tr key={cert.id}>
-                        <td>{cert.title || cert.name || `Certificate #${cert.id}`}{cert.created_at && <span className="certificate-date"> — {cert.created_at}</span>}</td>
-                        <td className="management-td-actions">
-                          {cert.path ? (<><a href={cert.path} target="_blank" rel="noopener noreferrer" className="management-btn management-btn-view">View</a><a href={cert.path} download className="management-btn management-btn-edit">Download</a></>) : <span className="management-empty">No file</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                {myCertificates.length === 0 && !myCertificatesLoading && (
-                  <p className="management-empty">You have no certificates yet.</p>
-                )}
-              </>
+              <div className="home-module-cards">
+                {myCertificates.map((cert) => {
+                  const title = cert.title || cert.name || `Certificate #${cert.id}`;
+                  const initials = (title.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase()) || 'CT';
+                  const hasFile = !!cert.path;
+                  return (
+                    <div key={cert.id} className="home-module-card">
+                      <div className="home-module-card-icon" aria-hidden>{initials}</div>
+                      <div className="home-module-card-body">
+                        <h4 className="home-module-card-title">{title}</h4>
+                        <p className="home-module-card-types">{cert.created_at ? cert.created_at : 'Certificate'}</p>
+                      </div>
+                      {hasFile ? (
+                        <a href={cert.path} download className="home-module-card-open" target="_blank" rel="noopener noreferrer">Download</a>
+                      ) : (
+                        <span className="home-module-card-no-file">No file</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>
@@ -290,38 +301,35 @@ const Dashboard = () => {
     if (activeMenu === 'assignment' && userData) {
       return (
         <div className="dashboard-content">
-          <div className="management-table-wrap">
-            <h3 className="home-modules-title">My assignments</h3>
+          <div className="home-modules-section">
             {myAssignmentsError && <p className="management-error">{myAssignmentsError}</p>}
             {myAssignmentsLoading ? (
               <p className="management-empty">Loading assignments…</p>
+            ) : myAssignments.length === 0 ? (
+              <p className="management-empty">You have no assignments.</p>
             ) : (
-              <>
-                <table className="management-table">
-                  <thead>
-                    <tr>
-                      <th>Title</th>
-                      <th>Description</th>
-                      <th className="management-th-actions">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {myAssignments.map((row) => {
-                      const docUrl = getAssignmentDocumentUrl(row);
-                      return (
-                        <tr key={row.id}>
-                          <td>{row.title || '—'}</td>
-                          <td className="management-td-desc">{row.description || '—'}</td>
-                          <td className="management-td-actions">{docUrl ? (<><a href={docUrl} target="_blank" rel="noopener noreferrer" className="management-doc-link">View</a><a href={docUrl} download className="management-btn management-btn-edit">Download</a></>) : <span className="management-empty">No document</span>}</td>
-                        </tr>
-                      );
-                    })}           
-                  </tbody>
-                </table>
-                {myAssignments.length === 0 && !myAssignmentsLoading && (
-                  <p className="management-empty">You have no assignments.</p>
-                )}
-              </>
+              <div className="home-module-cards">
+                {myAssignments.map((row) => {
+                  const docUrl = getAssignmentDocumentUrl(row);
+                  const title = row.title || 'Assignment';
+                  const initials = (title.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase()) || 'AS';
+                  const hasFile = !!docUrl;
+                  return (
+                    <div key={row.id} className="home-module-card">
+                      <div className="home-module-card-icon" aria-hidden>{initials}</div>
+                      <div className="home-module-card-body">
+                        <h4 className="home-module-card-title">{row.title || '—'}</h4>
+                        <p className="home-module-card-types">{row.description || 'Assignment document'}</p>
+                      </div>
+                      {hasFile ? (
+                        <a href={docUrl} download className="home-module-card-open" target="_blank" rel="noopener noreferrer">Download</a>
+                      ) : (
+                        <span className="home-module-card-no-file">No document</span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>
