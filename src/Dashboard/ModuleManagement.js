@@ -6,14 +6,24 @@ import { moduleApi, learningMaterialApi, quizApi, certificateApi, assignmentApi,
 import { BASE_URL } from '../api/apiClient';
 import './Dashboard.css';
 
-/** Build assignment document URL: support document_url (API response), path, and other keys. */
-function getAssignmentDocumentUrl(row) {
-  const raw = row?.document_url ?? row?.path ?? row?.document ?? row?.document_path ?? row?.file_url ?? row?.file_path ?? row?.url ?? row?.storage_path ?? (row?.document && typeof row.document === 'object' ? row.document.url : null);
+/** Build absolute document/file URL from row (assignment, learning material, etc.): support common API keys and relative paths. */
+function getDocumentUrl(row) {
+  const raw = row?.document_url ?? row?.path ?? row?.document ?? row?.document_path ?? row?.file_url ?? row?.file_path ?? row?.url ?? row?.storage_path ?? row?.media ?? (row?.document && typeof row.document === 'object' ? row.document.url : null) ?? (row?.media && typeof row.media === 'object' ? row.media.url : null);
   if (!raw || typeof raw !== 'string') return '';
   if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
   const siteRoot = BASE_URL.replace(/\/api\/?$/, '');
   if (raw.startsWith('/')) return siteRoot + raw;
   return siteRoot + '/' + raw;
+}
+
+/** Assignment document URL (delegate to shared helper). */
+function getAssignmentDocumentUrl(row) {
+  return getDocumentUrl(row);
+}
+
+/** Learning material document/media URL (same implementation as assignment for viewing document). */
+function getLearningMaterialDocumentUrl(row) {
+  return getDocumentUrl(row);
 }
 
 const swalConfirm = (options) => Swal.fire({ confirmButtonColor: '#2563eb', ...options });
@@ -118,7 +128,7 @@ const ModuleManagement = () => {
   const [moduleSaving, setModuleSaving] = useState(false);
 
   const [formModule, setFormModule] = useState({ name: '', description: '', code: '' });
-  const [formMaterial, setFormMaterial] = useState({ module_id: '', title: '', description: '', type: 'document', fileName: '' });
+  const [formMaterial, setFormMaterial] = useState({ module_id: '', title: '', description: '', type: 'document', fileName: '', file: null });
   const [formQuiz, setFormQuiz] = useState({ module_id: '', name: '', question: '', options: ['', ''], correctAnswerIndex: 0 });
   const [formCertificate, setFormCertificate] = useState({ user_id: '', fileName: '', file: null });
   const [formAssignment, setFormAssignment] = useState({ title: '', description: '', assigned_user_id: '', fileName: '', file: null });
@@ -135,7 +145,7 @@ const ModuleManagement = () => {
     setModalMode('add');
     setEditingItem(null);
     if (type === 'module') setFormModule({ name: '', description: '', code: '' });
-    if (type === 'learning-material') setFormMaterial({ module_id: moduleOptions[0]?.id ?? '', title: '', description: '', type: 'document', fileName: '' });
+    if (type === 'learning-material') setFormMaterial({ module_id: moduleOptions[0]?.id ?? '', title: '', description: '', type: 'document', fileName: '', file: null });
     if (type === 'quiz') setFormQuiz({ module_id: moduleOptions[0]?.id ?? '', name: '', question: '', options: ['', ''], correctAnswerIndex: 0 });
     if (type === 'certificate') setFormCertificate({ user_id: userOptions[0]?.id ?? '', fileName: '', file: null });
     if (type === 'assignment') setFormAssignment({ title: '', description: '', assigned_user_id: userOptions[0]?.id ?? '', fileName: '', file: null });
@@ -155,7 +165,8 @@ const ModuleManagement = () => {
         title: item.title || '',
         description: item.description || '',
         type: item.type || 'document',
-        fileName: item.media ? 'Uploaded file' : ''
+        fileName: item.media || item.path ? 'Uploaded file' : '',
+        file: null
       });
     }
     if (type === 'quiz') {
@@ -291,7 +302,11 @@ const ModuleManagement = () => {
     setCertificateLoading(true);
     setCertificateError(null);
     try {
-      const { data } = await certificateApi.ilist({ page: pageNum, per_page: CERTIFICATE_PER_PAGE });
+      const { data } = await certificateApi.ilist({
+        paginate: true,
+        per_page: CERTIFICATE_PER_PAGE,
+        page: pageNum
+      });
       const ok = data?.status === 'OK';
       if (ok) {
         setCertificates(getListFromResponse(data));
@@ -600,11 +615,11 @@ const ModuleManagement = () => {
 
   const handleMaterialFileChange = (e) => {
     const file = e.target.files?.[0];
-    setFormMaterial((p) => ({ ...p, fileName: file ? file.name : '' }));
+    setFormMaterial((p) => ({ ...p, fileName: file ? file.name : '', file: file || null }));
   };
 
   const handleMaterialTypeChange = (value) => {
-    setFormMaterial((p) => ({ ...p, type: value, fileName: '' }));
+    setFormMaterial((p) => ({ ...p, type: value, fileName: '', file: null }));
   };
 
   const handleSaveMaterial = async (e) => {
@@ -625,13 +640,31 @@ const ModuleManagement = () => {
         type: formMaterial.type
       };
       if (isEdit && editingItem.id != null) body.id = Number(editingItem.id);
+      if (formMaterial.file) {
+        const dataUrl = await readFileAsDataUrl(formMaterial.file);
+        if (formMaterial.type === 'document') {
+          body.document = dataUrl;
+        } else {
+          body.media = dataUrl;
+        }
+      }
       const { data } = await learningMaterialApi.iformAction(body);
       const ok = data?.status === 'OK';
       const msg = Array.isArray(data?.errorMessage) ? data.errorMessage[0] : data?.errorMessage;
       if (ok) {
-    closeModal();
+        closeModal();
         await swalSuccess(modalMode === 'add' ? 'Learning material added!' : 'Learning material updated!', msg || (modalMode === 'add' ? 'The learning material has been added.' : 'The learning material has been updated.'));
-        fetchMaterials(materialMeta.current_page);
+        const returnData = data?.returnData || {};
+        const savedId = returnData.id != null ? Number(returnData.id) : (isEdit && editingItem?.id != null ? Number(editingItem.id) : null);
+        const savedUrl = returnData.path ?? returnData.media ?? returnData.document ?? returnData.document_url ?? returnData.file_url ?? returnData.url ?? (typeof returnData.media === 'string' ? returnData.media : null) ?? (typeof returnData.document === 'string' ? returnData.document : null);
+        await fetchMaterials(materialMeta.current_page);
+        if (savedId != null && savedUrl) {
+          setMaterials((prev) =>
+            prev.map((item) =>
+              Number(item.id) === savedId ? { ...item, path: savedUrl, media: savedUrl } : item
+            )
+          );
+        }
       } else {
         await swalError('Save failed', msg || 'Could not save learning material.');
       }
@@ -745,8 +778,9 @@ const ModuleManagement = () => {
       }
 
       if (modalType === 'certificate') {
-        const pathCell = editingItem.path ? (
-          <a href={editingItem.path} target="_blank" rel="noopener noreferrer">View certificate</a>
+        const certificateUrl = getDocumentUrl(editingItem);
+        const pathCell = certificateUrl ? (
+          <a href={certificateUrl} target="_blank" rel="noopener noreferrer">View certificate</a>
         ) : '—';
         const rows = [
           ['User', editingItem.username || editingItem.email || '—'],
@@ -768,15 +802,16 @@ const ModuleManagement = () => {
       }
 
       if (modalType === 'learning-material') {
-        const mediaCell = editingItem.media ? (
-          <a href={editingItem.media} target="_blank" rel="noopener noreferrer">View file</a>
+        const viewDocUrl = getLearningMaterialDocumentUrl(editingItem);
+        const docCell = viewDocUrl ? (
+          <a href={viewDocUrl} target="_blank" rel="noopener noreferrer">View document</a>
         ) : '—';
         const rows = [
           ['Module', editingItem.module || '—'],
-        ['Title', editingItem.title],
-        ['Description', editingItem.description || '—'],
+          ['Title', editingItem.title],
+          ['Description', editingItem.description || '—'],
           ['Type', editingItem.type === 'document' ? 'Document' : 'Media'],
-          ['Media', mediaCell]
+          ['View', docCell]
         ];
         return (
           <Modal title={title} show={modalOpen} onClose={closeModal}>
@@ -894,7 +929,7 @@ const ModuleManagement = () => {
               >
                 <option value="">Select module</option>
                 {moduleOptions.map((m) => (
-                  <option key={m.id} value={m.id}>{m.code} – {m.name}</option>
+                  <option key={m.id} value={m.id}>{m.code} – {m.name || m.code}</option>
                 ))}
               </select>
             </div>
@@ -952,7 +987,7 @@ const ModuleManagement = () => {
               <select value={formQuiz.module_id} onChange={(e) => setFormQuiz((p) => ({ ...p, module_id: e.target.value }))} required disabled={quizSaving}>
                 <option value="">Select module</option>
                 {moduleOptions.map((m) => (
-                  <option key={m.id} value={m.id}>{m.code} – {m.name}</option>
+                  <option key={m.id} value={m.id}>{m.code} – {m.name || m.code}</option>
                 ))}
               </select>
             </div>
@@ -1118,7 +1153,7 @@ const ModuleManagement = () => {
             <tbody>
                   {modules.map((row) => (
                 <tr key={row.id}>
-                      <td>{row.name}</td>
+                      <td>{row.code ? `${row.code} – ${row.name}` : (row.name || '—')}</td>
                   <td className="management-td-desc">{row.description || '—'}</td>
                       <td>{row.code}</td>
                   <td className="management-td-actions">
@@ -1161,21 +1196,25 @@ const ModuleManagement = () => {
                 <th>Title</th>
                 <th>Description</th>
                 <th>Module</th>
-                    <th>Type</th>
-                    <th>Media</th>
+                <th>Type</th>
+                <th>View</th>
                 <th className="management-th-actions">Actions</th>
               </tr>
             </thead>
             <tbody>
-                  {materials.map((row) => (
+                  {materials.map((row) => {
+                    const documentUrl = getLearningMaterialDocumentUrl(row);
+                    const materialModule = moduleOptions.find((m) => Number(m.id) === Number(row.module_id));
+                    const moduleFullName = materialModule ? `${materialModule.code} – ${materialModule.name}` : (row.module || '—');
+                    return (
                 <tr key={row.id}>
                   <td>{row.title}</td>
                   <td className="management-td-desc">{row.description || '—'}</td>
-                      <td>{row.module || '—'}</td>
+                      <td>{moduleFullName}</td>
                       <td>{row.type === 'document' ? 'Document' : 'Media'}</td>
                       <td>
-                        {row.media ? (
-                          <a href={row.media} target="_blank" rel="noopener noreferrer">View</a>
+                        {documentUrl ? (
+                          <a href={documentUrl} target="_blank" rel="noopener noreferrer" className="management-doc-link">View</a>
                         ) : '—'}
                       </td>
                   <td className="management-td-actions">
@@ -1184,7 +1223,8 @@ const ModuleManagement = () => {
                         <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Learning Material', row, materials, setMaterials)}>Delete</button>
                   </td>
                 </tr>
-              ))}
+                    );
+                  })}
             </tbody>
           </table>
               {materials.length === 0 && <p className="management-empty">No learning materials yet. Add one to get started.</p>}
@@ -1278,13 +1318,15 @@ const ModuleManagement = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {certificates.map((row) => (
+                  {certificates.map((row) => {
+                    const certificateUrl = getDocumentUrl(row);
+                    return (
                     <tr key={row.id}>
                       <td>{row.username || '—'}</td>
                       <td>{row.email || '—'}</td>
                       <td>
-                        {row.path ? (
-                          <a href={row.path} target="_blank" rel="noopener noreferrer" className="management-doc-link">View</a>
+                        {certificateUrl ? (
+                          <a href={certificateUrl} target="_blank" rel="noopener noreferrer" className="management-doc-link">View</a>
                         ) : '—'}
                       </td>
                       <td className="management-td-actions">
@@ -1293,7 +1335,8 @@ const ModuleManagement = () => {
                         <button type="button" className="management-btn management-btn-delete" onClick={() => handleDelete('Certificate', row, certificates, setCertificates)}>Delete</button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
               {certificates.length === 0 && <p className="management-empty">No certificates yet. Add one to get started.</p>}

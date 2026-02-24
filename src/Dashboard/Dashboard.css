@@ -491,6 +491,70 @@
     color: #9ca3af;
 }
 
+/* Help Centre */
+.helpcentre-section {
+    background-color: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 1.5rem 2rem;
+}
+
+.helpcentre-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #111827;
+    margin: 0 0 0.75rem 0;
+}
+
+.helpcentre-intro {
+    font-size: 1rem;
+    color: #6b7280;
+    margin: 0 0 1.25rem 0;
+}
+
+.helpcentre-subtitle {
+    font-size: 1.0625rem;
+    font-weight: 600;
+    color: #374151;
+    margin: 0 0 0.5rem 0;
+}
+
+.helpcentre-contact {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1.5rem 2rem;
+}
+
+.helpcentre-contact-vertical {
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.helpcentre-contact-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.helpcentre-contact-label {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.helpcentre-contact-value {
+    font-size: 1rem;
+    font-weight: 500;
+    color: #2563eb;
+    text-decoration: none;
+}
+
+.helpcentre-contact-value:hover {
+    text-decoration: underline;
+}
+
 .content-header {
     display: flex;
     justify-content: space-between;

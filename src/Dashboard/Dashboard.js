@@ -158,10 +158,39 @@ const Dashboard = () => {
         const normalized = raw.map((row) => ({
           id: row.module_id ?? row.module?.id ?? row.id,
           code: row.module?.code ?? row.code,
-          name: row.module?.name ?? row.name,
+          name: row.module?.name ?? row.name ?? row.module_name ?? row.moduleName ?? row.module?.title ?? row.title ?? '',
           progress: row.progress ?? row.module?.progress ?? 0
         }));
-        setApiModules(normalized);
+        const missingNames = normalized.filter((m) => (m.id != null || m.code) && !m.name);
+        if (missingNames.length > 0) {
+          try {
+            const { data: moduleData } = await moduleApi.ilist({ paginate: true, per_page: 100, page: 1 });
+            if (moduleData?.status === 'OK') {
+              const allModules = getListFromResponse(moduleData);
+              const byId = {};
+              const byCode = {};
+              allModules.forEach((mod) => {
+                const id = mod.id ?? mod.module_id;
+                const code = mod.code;
+                if (id != null) byId[id] = mod;
+                if (code) byCode[code] = mod;
+              });
+              const enriched = normalized.map((m) => {
+                if (m.name) return m;
+                const mod = byId[m.id] ?? byCode[m.code];
+                const name = mod?.name ?? mod?.title ?? '';
+                return name ? { ...m, name } : m;
+              });
+              setApiModules(enriched);
+            } else {
+              setApiModules(normalized);
+            }
+          } catch {
+            setApiModules(normalized);
+          }
+        } else {
+          setApiModules(normalized);
+        }
         setApiModuleMeta(getModuleMetaFromResponse(data, MODULE_LIST_PER_PAGE));
       } else {
         setApiModules([]); setApiModuleError(data?.errorMessage || 'Failed to load my modules.');
@@ -236,7 +265,7 @@ const Dashboard = () => {
                       <div className="mymodule-course-logo">HM</div>
                       <div className="mymodule-course-text">
                         <div className="mymodule-course-name">
-                          {module.code || module.name} &mdash; {module.name}
+                          {module.code ?? '—'} — {module.name ?? '—'}
                         </div>
                         <div className="mymodule-course-meta">
                           <span>Documents</span>
@@ -376,6 +405,28 @@ const Dashboard = () => {
                 ))}
               </div>
             )}
+          </div>
+        </div>
+      );
+    }
+
+    if (activeMenu === 'helpcentre') {
+      return (
+        <div className="dashboard-content">
+          <div className="helpcentre-section">
+            <h2 className="helpcentre-title">Help Centre</h2>
+            <h3 className="helpcentre-subtitle">Get in touch</h3>
+            <p className="helpcentre-intro">Need assistance? Contact our support team:</p>
+            <div className="helpcentre-contact helpcentre-contact-vertical">
+              <div className="helpcentre-contact-item">
+                <span className="helpcentre-contact-label">Phone</span>
+                <a href="tel:+255625313162" className="helpcentre-contact-value">+255684991881</a>
+              </div>
+              <div className="helpcentre-contact-item">
+                <span className="helpcentre-contact-label">Email</span>
+                <a href="mailto:info@bunihub.or.tz" className="helpcentre-contact-value">info@bunihub.or.tz</a>
+              </div>
+            </div>
           </div>
         </div>
       );

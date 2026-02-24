@@ -11,6 +11,9 @@ const apiClient = axios.create({
   }
 });
 
+/** Endpoints where admin should see all items (no user_id filter). */
+const LIST_ALL_ENDPOINTS = ['/certificate/ilist', '/assignment/ilist'];
+
 apiClient.interceptors.request.use(
   (config) => {
     const userData = getUserData();
@@ -18,7 +21,9 @@ apiClient.interceptors.request.use(
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    if (userData?.id) {
+    const url = config.url || '';
+    const skipUserFilter = LIST_ALL_ENDPOINTS.some((path) => url.includes(path));
+    if (userData?.id && !skipUserFilter) {
       config.params = { ...config.params, user_id: userData.id };
     }
     return config;
