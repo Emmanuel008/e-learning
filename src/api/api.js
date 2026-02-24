@@ -117,7 +117,7 @@ export const certificateApi = {
  * save: { form_method: "save", title, description, assigned_user_id, document?: "data:application/pdf;base64,...", id? }
  * update: { form_method: "update", id, title, description, assigned_user_id, document? }
  * delete: { form_method: "delete", id }
- * ilist params: paginate, per_page, page, assigned_user_id (optional - filter by assigned user)
+ * ilist params: paginate, per_page, page, user_id (filter by user)
  */
 export const assignmentApi = {
   ilist: (params = {}) =>
@@ -130,5 +130,18 @@ export const assignmentApi = {
     apiClient.post('/assignment/iformAction', body)
 };
 
-const api = { auth, users, moduleApi, learningMaterialApi, quizApi, quizAnswerApi, certificateApi, assignmentApi };
+/**
+ * User-module enrollment (requires auth token).
+ * save: { form_method: "save", user_id, module_id }
+ * ilist params: paginate, per_page, page, user_id, company_id? (optional)
+ */
+export const userModuleApi = {
+  ilist: (params = {}) =>
+    apiClient.get('/userModule/ilist', { params: { paginate: true, per_page: 5, ...params } }),
+
+  iformAction: (body) =>
+    apiClient.post('/userModule/iformAction', body)
+};
+
+const api = { auth, users, moduleApi, userModuleApi, learningMaterialApi, quizApi, quizAnswerApi, certificateApi, assignmentApi };
 export default api;

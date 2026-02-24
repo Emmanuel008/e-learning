@@ -7,7 +7,7 @@ import ModuleManagement from './ModuleManagement';
 import UserManagement from './UserManagement';
 import Pagination from '../components/Pagination';
 import { getUserData } from './dashboardService';
-import { moduleApi, certificateApi, assignmentApi } from '../api/api';
+import { moduleApi, userModuleApi, certificateApi, assignmentApi } from '../api/api';
 import { BASE_URL } from '../api/apiClient';
 
 const MODULE_LIST_PER_PAGE = 6;
@@ -74,6 +74,8 @@ const Dashboard = () => {
   const [myAssignments, setMyAssignments] = useState([]);
   const [myAssignmentsLoading, setMyAssignmentsLoading] = useState(false);
   const [myAssignmentsError, setMyAssignmentsError] = useState(null);
+  const [enrollingModuleId, setEnrollingModuleId] = useState(null);
+  const [enrollError, setEnrollError] = useState(null);
 
   const activeMenu = searchParams.get('menu') || 'home';
   const activeTab = searchParams.get('tab') || 'all';
@@ -82,27 +84,12 @@ const Dashboard = () => {
     setUserData(getUserData());
   }, []);
 
-  const fetchApiModules = useCallback(async (pageNum) => {
-    setApiModuleLoading(true); setApiModuleError(null);
-    try {
-      const { data } = await moduleApi.ilist({ page: pageNum, per_page: MODULE_LIST_PER_PAGE });
-      if (data?.status === 'OK') {
-        setApiModules(getListFromResponse(data));
-        setApiModuleMeta(getModuleMetaFromResponse(data, MODULE_LIST_PER_PAGE));
-      } else {
-        setApiModules([]); setApiModuleError(data?.errorMessage || 'Failed to load modules.');
-      }
-    } catch (err) {
-      setApiModules([]); setApiModuleError(err.response?.data?.errorMessage || err.message || 'Failed to load modules.');
-    } finally { setApiModuleLoading(false); }
-  }, []);
-
   const fetchMyCertificates = useCallback(async () => {
     const user = getUserData();
     if (!user?.id) { setMyCertificates([]); return; }
     setMyCertificatesLoading(true); setMyCertificatesError(null);
     try {
-      const { data } = await certificateApi.ilist({ user_id: user.id, per_page: 50, page: 1 });
+      const { data } = await certificateApi.ilist({ user_id: user.id, per_page: 50, page: 1, paginate: true });
       if (data?.status === 'OK') {
         const list = getListFromResponse(data);
         setMyCertificates(list.filter((c) => Number(c.user_id) === Number(user.id)));
@@ -119,10 +106,10 @@ const Dashboard = () => {
     if (!user?.id) { setMyAssignments([]); return; }
     setMyAssignmentsLoading(true); setMyAssignmentsError(null);
     try {
-      const { data } = await assignmentApi.ilist({ assigned_user_id: user.id, per_page: 50, page: 1 });
+      const { data } = await assignmentApi.ilist({ user_id: user.id, per_page: 50, page: 1, paginate: true });
       if (data?.status === 'OK') {
         const list = getListFromResponse(data);
-        setMyAssignments(list.filter((a) => Number(a.assigned_user_id) === Number(user.id)));
+        setMyAssignments(list.filter((a) => Number(a.user_id) === Number(user.id)));
       } else {
         setMyAssignments([]); setMyAssignmentsError(data?.errorMessage || 'Failed to load assignments.');
       }
@@ -148,18 +135,61 @@ const Dashboard = () => {
     } finally { setApiModuleLoading(false); }
   }, []);
 
+  const fetchUserModules = useCallback(async (pageNum) => {
+    const user = getUserData();
+    if (!user?.id) return;
+    setApiModuleLoading(true); setApiModuleError(null);
+    try {
+      const { data } = await userModuleApi.ilist({ user_id: user.id, page: pageNum, per_page: MODULE_LIST_PER_PAGE });
+      if (data?.status === 'OK') {
+        const raw = getListFromResponse(data);
+        const normalized = raw.map((row) => ({
+          id: row.module_id ?? row.module?.id ?? row.id,
+          code: row.module?.code ?? row.code,
+          name: row.module?.name ?? row.name,
+          progress: row.progress ?? row.module?.progress ?? 0
+        }));
+        setApiModules(normalized);
+        setApiModuleMeta(getModuleMetaFromResponse(data, MODULE_LIST_PER_PAGE));
+      } else {
+        setApiModules([]); setApiModuleError(data?.errorMessage || 'Failed to load my modules.');
+      }
+    } catch (err) {
+      setApiModules([]); setApiModuleError(err.response?.data?.errorMessage || err.message || 'Failed to load my modules.');
+    } finally { setApiModuleLoading(false); }
+  }, []);
+
   useEffect(() => {
-    if (activeMenu === 'mymodule') fetchApiModules(apiModulePage);
+    if (activeMenu === 'mymodule') fetchUserModules(apiModulePage);
     if (activeMenu === 'home' && userData?.id) fetchHomeModules();
     if (activeMenu === 'certification' && userData?.id) fetchMyCertificates();
     if (activeMenu === 'assignment' && userData?.id) fetchMyAssignments();
-  }, [activeMenu, apiModulePage, fetchApiModules, userData?.id, fetchHomeModules, fetchMyCertificates, fetchMyAssignments]);
+  }, [activeMenu, apiModulePage, fetchUserModules, userData?.id, fetchHomeModules, fetchMyCertificates, fetchMyAssignments]);
 
   const setTab = (nextTab) => {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.set('menu', activeMenu); nextParams.set('tab', nextTab);
     setSearchParams(nextParams);
   };
+
+  const handleEnroll = useCallback(async (moduleId) => {
+    const user = getUserData();
+    if (!user?.id) return;
+    setEnrollError(null);
+    setEnrollingModuleId(moduleId);
+    try {
+      const { data } = await userModuleApi.iformAction({ form_method: 'save', user_id: user.id, module_id: moduleId });
+      if (data?.status === 'OK') {
+        setSearchParams(new URLSearchParams({ menu: 'mymodule' }));
+      } else {
+        setEnrollError(data?.errorMessage || 'Enrollment failed.');
+      }
+    } catch (err) {
+      setEnrollError(err.response?.data?.errorMessage || err.message || 'Enrollment failed.');
+    } finally {
+      setEnrollingModuleId(null);
+    }
+  }, [setSearchParams]);
 
   const title = MENU_LABELS[activeMenu] || 'Home';
 
@@ -310,6 +340,7 @@ const Dashboard = () => {
       return (
         <div className="dashboard-content">
           <div className="home-modules-section">
+            {enrollError && <p className="management-error">{enrollError}</p>}
             {apiModuleLoading ? (
               <p className="management-empty">Loading modules…</p>
             ) : apiModuleError ? (
@@ -325,7 +356,14 @@ const Dashboard = () => {
                       <h4 className="home-module-card-title">{m.code ?? '—'} — {m.name ?? '—'}</h4>
                       <p className="home-module-card-types">Documents Videos Quiz</p>
                     </div>
-                    <button type="button" className="home-module-card-open" onClick={() => navigate(`/modules/${m.id}`)}>Enroll</button>
+                    <button
+                      type="button"
+                      className="home-module-card-open"
+                      onClick={() => handleEnroll(m.id)}
+                      disabled={enrollingModuleId === m.id}
+                    >
+                      {enrollingModuleId === m.id ? 'Enrolling…' : 'Enroll'}
+                    </button>
                   </div>
                 ))}
               </div>
