@@ -155,12 +155,23 @@ const Dashboard = () => {
       const { data } = await userModuleApi.ilist({ user_id: user.id, page: pageNum, per_page: MODULE_LIST_PER_PAGE });
       if (data?.status === 'OK') {
         const raw = getListFromResponse(data);
-        const normalized = raw.map((row) => ({
-          id: row.module_id ?? row.module?.id ?? row.id,
-          code: row.module?.code ?? row.code,
-          name: row.module?.name ?? row.name ?? row.module_name ?? row.moduleName ?? row.module?.title ?? row.title ?? '',
-          progress: row.progress ?? row.module?.progress ?? 0
-        }));
+        const byModuleId = {};
+        raw.forEach((row) => {
+          const mid = row.module_id ?? row.module?.id ?? row.id;
+          if (mid == null) return;
+          const status = (row.status ?? row.module?.status ?? 'open').toString().toLowerCase();
+          const isComplete = /complete|completed|finished/.test(status);
+          if (!byModuleId[mid] || isComplete) {
+            byModuleId[mid] = {
+              id: mid,
+              code: row.module?.code ?? row.code,
+              name: (typeof row.module === 'string' ? row.module : null) ?? row.module?.name ?? row.name ?? row.module_name ?? row.moduleName ?? row.module?.title ?? row.title ?? '',
+              progress: row.progress ?? row.module?.progress ?? 0,
+              status
+            };
+          }
+        });
+        const normalized = Object.values(byModuleId);
         const missingNames = normalized.filter((m) => (m.id != null || m.code) && !m.name);
         if (missingNames.length > 0) {
           try {
@@ -219,6 +230,20 @@ const Dashboard = () => {
     setEnrollError(null);
     setEnrollingModuleId(moduleId);
     try {
+      const { data: listData } = await userModuleApi.ilist({ user_id: user.id, per_page: 100, page: 1, paginate: true });
+      const list = listData?.status === 'OK' ? getListFromResponse(listData) : [];
+      const enrolledModuleIds = [...new Set(list.map((row) => row.module_id ?? row.module?.id).filter(Boolean))];
+      if (enrolledModuleIds.length > 0) {
+        const alreadyInThis = enrolledModuleIds.some((mid) => Number(mid) === Number(moduleId));
+        if (alreadyInThis) {
+          setEnrollError('You are already enrolled in this module.');
+          setEnrollingModuleId(null);
+          return;
+        }
+        setEnrollError('You can only be enrolled in one module at a time. Complete your current module first.');
+        setEnrollingModuleId(null);
+        return;
+      }
       const { data } = await userModuleApi.iformAction({ form_method: 'save', user_id: user.id, module_id: moduleId });
       if (data?.status === 'OK') {
         setSearchParams(new URLSearchParams({ menu: 'mymodule' }));
@@ -241,11 +266,12 @@ const Dashboard = () => {
       const currentPage = apiModuleMeta.current_page;
       const from = total > 0 ? (currentPage - 1) * apiModuleMeta.per_page + 1 : 0;
       const to = Math.min(currentPage * apiModuleMeta.per_page, total);
+      const isComplete = (m) => /complete|completed|finished/.test((m.status || '').toString().toLowerCase());
       const filteredForTab =
         activeTab === 'active'
-          ? apiModules.filter((m) => (m.progress ?? 0) < 100)
+          ? apiModules.filter((m) => !isComplete(m))
           : activeTab === 'expired'
-            ? apiModules.filter((m) => (m.progress ?? 0) >= 100)
+            ? apiModules.filter(isComplete)
             : apiModules;
       return (
         <div className="dashboard-content">
@@ -275,7 +301,9 @@ const Dashboard = () => {
                       </div>
                     </div>
                     <div className="mymodule-course-status">
-                      <span className="mymodule-status-badge start">Open</span>
+                      <span className={`mymodule-status-badge ${/complete|completed|finished/.test(module.status || '') ? 'finished' : 'start'}`}>
+                        {/complete|completed|finished/.test(module.status || '') ? 'Complete' : 'Open'}
+                      </span>
                     </div>
                   </div>
                 ))}

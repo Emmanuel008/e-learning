@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import DashboardShell from '../Dashboard/DashboardShell';
 import Pagination from '../components/Pagination';
-import { moduleApi, quizApi, quizAnswerApi } from '../api/api';
+import { moduleApi, quizApi, quizAnswerApi, userModuleApi } from '../api/api';
 import { getUserData } from '../Dashboard/dashboardService';
 import './ModuleDetail.css';
 
@@ -45,6 +45,7 @@ const ModuleQuizListPage = () => {
   const [submitting, setSubmitting] = useState(false);
   const [submitMessage, setSubmitMessage] = useState(null);
   const [justSubmitted, setJustSubmitted] = useState(false);
+  const [moduleCompleteCheckDone, setModuleCompleteCheckDone] = useState(false);
 
   const id = Number(moduleId);
 
@@ -116,8 +117,51 @@ const ModuleQuizListPage = () => {
   }, [fetchModule]);
 
   useEffect(() => {
-    fetchQuizzes(page);
-  }, [page, fetchQuizzes]);
+    if (!id) return;
+    const user = getUserData();
+    if (!user?.id) {
+      setModuleCompleteCheckDone(true);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        let pageNum = 1;
+        const perPage = 50;
+        while (true) {
+          const { data: umData } = await userModuleApi.ilist({ user_id: user.id, per_page: perPage, page: pageNum, paginate: true });
+          if (cancelled || umData?.status !== 'OK') break;
+          const list = getListFromResponse(umData);
+          const forModule = list.filter((row) => {
+            const mid = row.module_id ?? row.moduleId ?? row.module?.id;
+            return mid != null && Number(mid) === id;
+          });
+          const enrollment = forModule.find((e) => /complete|completed|finished/.test((e.status || '').toString().toLowerCase())) ?? forModule[0];
+          if (enrollment) {
+            const status = (enrollment.status ?? enrollment.module?.status ?? 'open').toString().toLowerCase().trim();
+            if (/complete|completed|finished/.test(status)) {
+              if (!cancelled) navigate(`/modules/${moduleId}/quiz/results`, { replace: true });
+              return;
+            }
+            break;
+          }
+          const rd = umData?.returnData || {};
+          const meta = rd.list_of_item?.meta ?? rd.meta ?? rd;
+          const lastPage = meta?.last_page ?? rd?.last_page ?? 1;
+          if (pageNum >= lastPage) break;
+          pageNum += 1;
+        }
+        if (!cancelled) setModuleCompleteCheckDone(true);
+      } catch (_) {
+        if (!cancelled) setModuleCompleteCheckDone(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id, moduleId, navigate]);
+
+  useEffect(() => {
+    if (moduleCompleteCheckDone) fetchQuizzes(page);
+  }, [page, fetchQuizzes, moduleCompleteCheckDone]);
 
   const handleBack = () => navigate(`/modules/${moduleId}`);
   const total = meta.total;
@@ -158,11 +202,20 @@ const ModuleQuizListPage = () => {
       const { data } = await quizAnswerApi.iformAction({
         form_method: 'save',
         user_id: Number(user.id),
+        module_id: id,
         answers
       });
       if (data?.status === 'OK') {
         setSubmitMessage({ type: 'success', text: 'Successfully submit the quiz.' });
         setJustSubmitted(true);
+        try {
+          await userModuleApi.iformAction({
+            form_method: 'update',
+            user_id: Number(user.id),
+            module_id: id,
+            status: 'complete'
+          });
+        } catch (_) {}
       } else {
         setSubmitMessage({ type: 'error', text: data?.errorMessage || 'Failed to submit answers.' });
       }
@@ -199,8 +252,8 @@ const ModuleQuizListPage = () => {
         <section className="module-detail-section">
           <div className="module-detail-panel">
             {error && <p className="management-error">{error}</p>}
-            {loading ? (
-              <p className="module-detail-empty">Loading quiz…</p>
+            {(!moduleCompleteCheckDone || loading) ? (
+              <p className="module-detail-empty">Loading…</p>
             ) : (
               <>
                 <div className="module-quiz-list">

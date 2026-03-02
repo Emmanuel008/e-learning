@@ -1,8 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import DashboardShell from '../Dashboard/DashboardShell';
-import { moduleApi, learningMaterialApi, quizApi } from '../api/api';
+import { moduleApi, learningMaterialApi, quizApi, userModuleApi, quizAnswerApi } from '../api/api';
+import { getUserData } from '../Dashboard/dashboardService';
 import './ModuleDetail.css';
+
+function getListFromResponse(data) {
+  const rd = data?.returnData;
+  if (!rd) return [];
+  const list = rd.list_of_item ?? rd;
+  return Array.isArray(list) ? list : list?.data ?? rd.data ?? [];
+}
 
 const ModuleDetailByApi = () => {
   const navigate = useNavigate();
@@ -11,6 +19,9 @@ const ModuleDetailByApi = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [counts, setCounts] = useState({ documents: 0, videos: 0, quizzes: 0 });
+  const [quizStatus, setQuizStatus] = useState('open'); // 'open' | 'complete' from userModule API
+  const [quizStatusLoading, setQuizStatusLoading] = useState(true); // true until userModule fetch completes
+  const [quizResultSummary, setQuizResultSummary] = useState(null); // { countCorrect, totalQuestions } when complete
 
   useEffect(() => {
     let cancelled = false;
@@ -19,14 +30,6 @@ const ModuleDetailByApi = () => {
       setError('Invalid module.');
       setLoading(false);
       return;
-    }
-
-    function getListFromResponse(data) {
-      const returnData = data?.returnData;
-      if (!returnData) return [];
-      const listOfItem = returnData.list_of_item ?? returnData;
-      if (Array.isArray(listOfItem)) return listOfItem;
-      return listOfItem?.data ?? returnData.data ?? [];
     }
 
     const load = async () => {
@@ -98,6 +101,80 @@ const ModuleDetailByApi = () => {
     return () => { cancelled = true; };
   }, [moduleId]);
 
+  // Quiz card: call userModule endpoint and update status for this module (runs as soon as moduleId is set)
+  useEffect(() => {
+    if (!moduleId) return;
+    const id = Number(moduleId);
+    if (!id) return;
+    const user = getUserData();
+    setQuizStatusLoading(true);
+    setQuizStatus('open');
+    setQuizResultSummary(null);
+    let cancelled = false;
+    (async () => {
+      try {
+        if (!user?.id) {
+          if (!cancelled) setQuizStatusLoading(false);
+          return;
+        }
+        let enrollment = null;
+        let page = 1;
+        const perPage = 50;
+        while (true) {
+          const { data: umData } = await userModuleApi.ilist({ user_id: user.id, per_page: perPage, page, paginate: true });
+          if (cancelled) break;
+          if (umData?.status !== 'OK') break;
+          const list = getListFromResponse(umData);
+          const forModule = list.filter((row) => {
+            const mid = row.module_id ?? row.moduleId ?? row.module?.id;
+            return mid != null && Number(mid) === id;
+          });
+          if (forModule.length > 0) {
+            enrollment = forModule.find((e) => /complete|completed|finished/.test((e.status || '').toString().toLowerCase())) ?? forModule[0];
+            break;
+          }
+          const rd = umData?.returnData || {};
+          const listNode = rd.list_of_item ?? rd;
+          const meta = listNode?.meta ?? rd.meta ?? rd;
+          const lastPage = meta?.last_page ?? rd?.last_page ?? 1;
+          if (page >= lastPage) break;
+          page += 1;
+        }
+        if (cancelled) return;
+        if (enrollment) {
+          const status = (enrollment.status ?? enrollment.module?.status ?? enrollment.completion_status ?? enrollment.quiz_status ?? 'open').toString().toLowerCase().trim();
+          setQuizStatus(/complete|completed|finished/.test(status) ? 'complete' : 'open');
+        } else {
+          setQuizStatus('open');
+        }
+      } catch (_) {
+        if (!cancelled) setQuizStatus('open');
+      } finally {
+        if (!cancelled) setQuizStatusLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [moduleId]);
+
+  useEffect(() => {
+    if (quizStatus !== 'complete' || !moduleId) return;
+    let cancelled = false;
+    const id = Number(moduleId);
+    (async () => {
+      try {
+        const { data } = await quizAnswerApi.iresults({ module_id: id });
+        if (cancelled || data?.status !== 'OK') return;
+        const rd = data?.returnData ?? data;
+        const countCorrect = rd?.count_correct_answer ?? rd?.score ?? rd?.total_score ?? rd?.marks;
+        const totalQuestions = rd?.total_questions ?? rd?.total ?? rd?.total_marks;
+        setQuizResultSummary({ countCorrect, totalQuestions });
+      } catch (_) {
+        if (!cancelled) setQuizResultSummary(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [quizStatus, moduleId]);
+
   const handleBack = () => navigate('/dashboard?menu=mymodule');
 
   if (loading) {
@@ -124,10 +201,11 @@ const ModuleDetailByApi = () => {
 
   const progress = 0; // Could come from API later
   const chapterCount = 3;
+  const quizPath = quizStatus === 'complete' ? `/modules/${moduleId}/quiz/results` : `/modules/${moduleId}/quiz`;
   const cards = [
     { number: 1, id: 'documents', type: 'Document', title: 'Documents', count: counts.documents, path: `/modules/${moduleId}/documents` },
     { number: 2, id: 'videos', type: 'Video', title: 'Videos', count: counts.videos, path: `/modules/${moduleId}/videos` },
-    { number: 3, id: 'quiz', type: 'Quiz', title: 'Quiz', count: counts.quizzes, path: `/modules/${moduleId}/quiz` }
+    { number: 3, id: 'quiz', type: 'Quiz', title: 'Quiz', count: counts.quizzes, path: quizPath }
   ];
 
   return (
@@ -183,7 +261,25 @@ const ModuleDetailByApi = () => {
                   {card.type === 'Quiz' ? (
                     <div className="module-quiz-status-row">
                       <span className="module-quiz-status-label">Status</span>
-                      <span className="module-quiz-status start">Start</span>
+                      {quizStatusLoading ? (
+                        <span className="module-quiz-status start">Loading…</span>
+                      ) : (
+                        <>
+                          <span className={`module-quiz-status ${quizStatus === 'complete' ? 'finished' : 'start'}`}>
+                            {quizStatus === 'complete' ? 'Complete' : 'Open'}
+                          </span>
+                          {quizStatus === 'complete' && quizResultSummary && (
+                            <div className="module-quiz-card-result">
+                              {quizResultSummary.totalQuestions != null && quizResultSummary.countCorrect != null
+                                ? `Score: ${quizResultSummary.countCorrect} / ${quizResultSummary.totalQuestions}`
+                                : 'View results'}
+                            </div>
+                          )}
+                          {quizStatus === 'complete' && !quizResultSummary && (
+                            <div className="module-quiz-card-result">View results</div>
+                          )}
+                        </>
+                      )}
                     </div>
                   ) : (
                     <div className="module-chapter-progress">

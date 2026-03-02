@@ -89,7 +89,6 @@ const ModuleQuizResultsPage = () => {
     fetchResults();
   }, [fetchResults]);
 
-  const handleBackToQuiz = () => navigate(`/modules/${moduleId}/quiz`);
   const handleBackToModule = () => navigate(`/modules/${moduleId}`);
 
   const rd = resultsData;
@@ -123,8 +122,8 @@ const ModuleQuizResultsPage = () => {
         <section className="module-detail-section">
           <div className="module-detail-panel">
             <div className="module-quiz-results-actions">
-              <button type="button" className="module-quiz-submit-btn" onClick={handleBackToQuiz}>
-                ← Back to quiz
+              <button type="button" className="module-quiz-submit-btn" onClick={handleBackToModule}>
+                Return to module
               </button>
             </div>
             {error && !resultsData && <p className="management-error">{error}</p>}
