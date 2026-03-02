@@ -11,7 +11,7 @@ const apiClient = axios.create({
   }
 });
 
-/** Endpoints where admin should see all items (no user_id filter). */
+/** Endpoints where admin should see all items (no user_id). For user role we always send user_id so they see only their own. */
 const LIST_ALL_ENDPOINTS = ['/certificate/ilist', '/assignment/ilist'];
 
 apiClient.interceptors.request.use(
@@ -22,7 +22,9 @@ apiClient.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`;
     }
     const url = config.url || '';
-    const skipUserFilter = LIST_ALL_ENDPOINTS.some((path) => url.includes(path));
+    const role = (userData?.role || '').toString().toLowerCase();
+    const isAdmin = role === 'admin' || role === 'administrator';
+    const skipUserFilter = LIST_ALL_ENDPOINTS.some((path) => url.includes(path)) && isAdmin;
     if (userData?.id && !skipUserFilter) {
       config.params = { ...config.params, user_id: userData.id };
     }
@@ -33,12 +35,7 @@ apiClient.interceptors.request.use(
 
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      // Optional: clear user and redirect to login (e.g. if using a global auth handler)
-    }
-    return Promise.reject(error);
-  }
+  (error) => Promise.reject(error)
 );
 
 export { apiClient, BASE_URL };

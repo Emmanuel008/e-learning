@@ -13,10 +13,20 @@ import { BASE_URL } from '../api/apiClient';
 const MODULE_LIST_PER_PAGE = 6;
 
 function getListFromResponse(data) {
-  const rd = data?.returnData;
-  if (!rd) return [];
-  const list = rd.list_of_item ?? rd;
-  return Array.isArray(list) ? list : list?.data ?? rd.data ?? [];
+  if (!data || typeof data !== 'object') return [];
+  if (Array.isArray(data)) return data;
+  const rd = data.returnData;
+  if (rd != null && Array.isArray(rd)) return rd;
+  if (rd != null && typeof rd === 'object') {
+    const listOfItem = rd.list_of_item;
+    if (listOfItem && Array.isArray(listOfItem.data)) return listOfItem.data;
+    if (Array.isArray(rd.data)) return rd.data;
+    const list = listOfItem ?? rd.data ?? rd.certificates ?? rd.assignments;
+    if (Array.isArray(list)) return list;
+    if (list && Array.isArray(list.data)) return list.data;
+  }
+  if (Array.isArray(data.data)) return data.data;
+  return [];
 }
 
 function getModuleMetaFromResponse(data, perPage) {
@@ -30,12 +40,16 @@ function getModuleMetaFromResponse(data, perPage) {
   return { current_page: current, last_page: Math.max(1, Number(last) || 1), total, per_page: per };
 }
 
-function getAssignmentDocumentUrl(row) {
-  const raw = row?.document_url ?? row?.path ?? row?.document ?? row?.document_path ?? row?.file_url;
+function getDocumentUrl(row) {
+  const raw = row?.document_url ?? row?.path ?? row?.document ?? row?.document_path ?? row?.file_url ?? row?.file_path ?? row?.url;
   if (!raw || typeof raw !== 'string') return '';
   if (raw.startsWith('http://') || raw.startsWith('https://')) return raw;
   const root = BASE_URL.replace(/\/api\/?$/, '');
   return raw.startsWith('/') ? root + raw : root + '/' + raw;
+}
+
+function getAssignmentDocumentUrl(row) {
+  return getDocumentUrl(row);
 }
 
 function getModuleInitials(m) {
@@ -102,11 +116,14 @@ const Dashboard = () => {
     setMyCertificatesLoading(true); setMyCertificatesError(null);
     try {
       const { data } = await certificateApi.ilist({ user_id: user.id, per_page: 50, page: 1, paginate: true });
-      if (data?.status === 'OK') {
-        const list = getListFromResponse(data);
-        setMyCertificates(list.filter((c) => Number(c.user_id) === Number(user.id)));
+      const list = getListFromResponse(data);
+      const ok = (data?.status ?? '').toString().toUpperCase() === 'OK';
+      if (ok || (Array.isArray(list) && list.length > 0)) {
+        setMyCertificates(Array.isArray(list) ? list : []);
+        setMyCertificatesError(null);
       } else {
-        setMyCertificates([]); setMyCertificatesError(data?.errorMessage || 'Failed to load certificates.');
+        setMyCertificates([]);
+        setMyCertificatesError(data?.errorMessage || 'Failed to load certificates.');
       }
     } catch (err) {
       setMyCertificates([]); setMyCertificatesError(err.response?.data?.errorMessage || err.message || 'Failed to load certificates.');
@@ -118,12 +135,15 @@ const Dashboard = () => {
     if (!user?.id) { setMyAssignments([]); return; }
     setMyAssignmentsLoading(true); setMyAssignmentsError(null);
     try {
-      const { data } = await assignmentApi.ilist({ user_id: user.id, per_page: 50, page: 1, paginate: true });
-      if (data?.status === 'OK') {
-        const list = getListFromResponse(data);
-        setMyAssignments(list.filter((a) => Number(a.user_id) === Number(user.id)));
+      const { data } = await assignmentApi.ilist({ user_id: user.id, assigned_user_id: user.id, per_page: 50, page: 1, paginate: true });
+      const list = getListFromResponse(data);
+      const ok = (data?.status ?? '').toString().toUpperCase() === 'OK';
+      if (ok || (Array.isArray(list) && list.length > 0)) {
+        setMyAssignments(Array.isArray(list) ? list : []);
+        setMyAssignmentsError(null);
       } else {
-        setMyAssignments([]); setMyAssignmentsError(data?.errorMessage || 'Failed to load assignments.');
+        setMyAssignments([]);
+        setMyAssignmentsError(data?.errorMessage || 'Failed to load assignments.');
       }
     } catch (err) {
       setMyAssignments([]); setMyAssignmentsError(err.response?.data?.errorMessage || err.message || 'Failed to load assignments.');
@@ -217,6 +237,14 @@ const Dashboard = () => {
     if (activeMenu === 'certification' && userData?.id) fetchMyCertificates();
     if (activeMenu === 'assignment' && userData?.id) fetchMyAssignments();
   }, [activeMenu, apiModulePage, fetchUserModules, userData?.id, fetchHomeModules, fetchMyCertificates, fetchMyAssignments]);
+
+  useEffect(() => {
+    if (!userData?.id) return;
+    const role = (userData.role || '').toString().toLowerCase();
+    if (role === 'admin' || role === 'administrator') return;
+    fetchMyCertificates();
+    fetchMyAssignments();
+  }, [userData?.id, userData?.role, fetchMyCertificates, fetchMyAssignments]);
 
   const setTab = (nextTab) => {
     const nextParams = new URLSearchParams(searchParams);
@@ -326,24 +354,28 @@ const Dashboard = () => {
             {myCertificatesLoading ? (
               <p className="management-empty">Loading certificates…</p>
             ) : myCertificates.length === 0 ? (
-              <p className="management-empty">You have no certificates yet.</p>
+              <p className="management-empty">
+                You have no certificates yet.
+                <button type="button" onClick={() => userData?.id && fetchMyCertificates()} className="management-empty-refresh" style={{ marginLeft: '0.5rem', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', color: '#2563eb' }}>Retry</button>
+              </p>
             ) : (
               <div className="home-module-cards">
-                {myCertificates.map((cert) => {
-                  const title = cert.title || cert.name || `Certificate #${cert.id}`;
+                {myCertificates.map((cert, idx) => {
+                  const docUrl = getDocumentUrl(cert);
+                  const title = cert.title || cert.name || `Certificate #${cert.id ?? idx}`;
                   const initials = (title.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase()) || 'CT';
-                  const hasFile = !!cert.path;
+                  const hasFile = !!docUrl;
                   return (
-                    <div key={cert.id} className="home-module-card">
+                    <div key={cert.id ?? `cert-${idx}`} className="home-module-card">
                       <div className="home-module-card-icon" aria-hidden>{initials}</div>
                       <div className="home-module-card-body">
                         <h4 className="home-module-card-title">{title}</h4>
-                        <p className="home-module-card-types">{cert.created_at ? cert.created_at : 'Certificate'}</p>
+                        <p className="home-module-card-types">{cert.description || cert.created_at || 'Certificate'}</p>
                       </div>
                       {hasFile ? (
-                        <a href={cert.path} download className="home-module-card-open" target="_blank" rel="noopener noreferrer">Download</a>
+                        <a href={docUrl} download className="home-module-card-open" target="_blank" rel="noopener noreferrer">Download</a>
                       ) : (
-                        <span className="home-module-card-no-file">No file</span>
+                        <span className="home-module-card-no-file">No document</span>
                       )}
                     </div>
                   );
@@ -363,16 +395,19 @@ const Dashboard = () => {
             {myAssignmentsLoading ? (
               <p className="management-empty">Loading assignments…</p>
             ) : myAssignments.length === 0 ? (
-              <p className="management-empty">You have no assignments.</p>
+              <p className="management-empty">
+                You have no assignments.
+                <button type="button" onClick={() => userData?.id && fetchMyAssignments()} className="management-empty-refresh" style={{ marginLeft: '0.5rem', textDecoration: 'underline', background: 'none', border: 'none', cursor: 'pointer', color: '#2563eb' }}>Retry</button>
+              </p>
             ) : (
               <div className="home-module-cards">
-                {myAssignments.map((row) => {
+                {myAssignments.map((row, idx) => {
                   const docUrl = getAssignmentDocumentUrl(row);
                   const title = row.title || 'Assignment';
                   const initials = (title.replace(/[^a-zA-Z0-9]/g, '').slice(0, 2).toUpperCase()) || 'AS';
                   const hasFile = !!docUrl;
                   return (
-                    <div key={row.id} className="home-module-card">
+                    <div key={row.id ?? `assignment-${idx}`} className="home-module-card">
                       <div className="home-module-card-icon" aria-hidden>{initials}</div>
                       <div className="home-module-card-body">
                         <h4 className="home-module-card-title">{row.title || '—'}</h4>
